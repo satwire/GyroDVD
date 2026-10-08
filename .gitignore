@@ -21,3 +21,7 @@ __pycache__/
 inference_GyroVDReal_ori.py
 inference_GyroVDSyn_ori.py
 options/train/bk
+
+.vscode/
+/GyroDVD_supplementary_video.mp4
+/GyroDVD_supplementary_document.pdf

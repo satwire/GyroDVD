@@ -1,21 +1,21 @@
-import glob
-import os
-import torch
-import cv2
-import tqdm
-import numpy as np
-import gc
-import torch.nn.functional as F
-import gtsam
-import importlib
-from copy import deepcopy
-from gtsam import PreintegrationParams, PreintegratedImuMeasurements, Rot3
-from time import perf_counter
-from scipy.ndimage import distance_transform_edt
 import argparse
+import gc
+import glob
+import importlib
+import os
+from time import perf_counter
+
+import cv2
+import gtsam
+import numpy as np
+import torch
+import torch.nn.functional as F
+import tqdm
+from gtsam import PreintegratedImuMeasurements, PreintegrationParams, Rot3
+
 from basicsr.archs.RAFT.raft_small import RAFT_small
-from basicsr.archs.RAFT.utils.utils import InputPadder, image2torch
-from basicsr.utils.img_util import tensor2img, img2tensor, imwrite
+from basicsr.archs.RAFT.utils.utils import InputPadder
+from basicsr.utils.img_util import img2tensor, imwrite, tensor2img
 from inference_utils import *
 
 parser = argparse.ArgumentParser()
@@ -34,6 +34,13 @@ parser.add_argument(
 parser.add_argument(
     '--out_path',
     help="output path"
+)
+parser.add_argument(
+    '--window',
+    type=int,
+    default=16,
+    help="temporal sliding-window length (frames). Smaller uses less GPU memory; "
+         "(num_frames - 4) must be divisible by (window - 4). The original setting is 52 (24GB+ GPU)."
 )
 args = parser.parse_args()
 viz_path = args.out_path 
@@ -97,6 +104,7 @@ for dir_path in tqdm.tqdm(dir_list):
     imgs = [cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE) for img in imgs]
     imgs_torch = img2tensor(imgs, bgr2rgb=False, float32=True)
     imgs_torch = torch.stack(imgs_torch, dim=0).unsqueeze(0)
+    del imgs  # free the numpy copies (~2.5GB for 100 1080p frames)
 
 
     # Compute center timestamps
@@ -205,8 +213,16 @@ for dir_path in tqdm.tqdm(dir_list):
         padder = InputPadder(img1_torch.shape)
         img1_torch, img2_torch = padder.pad(img1_torch, img2_torch)
 
+        # RAFT's all-pairs correlation volume (+ pyramid) costs ~(h/8*w/8)^2 * 4 bytes * 4/3 per pair,
+        # so choose the batch size from the resolution to stay within a fixed memory budget.
+        corr_budget = 3 * 1024 ** 3
+        n_tokens = (img1_torch.shape[-2] // 8) * (img1_torch.shape[-1] // 8)
+        bytes_per_pair = n_tokens ** 2 * 4 * 4 / 3
+        raft_small.max_batch = max(1, min(32, int(corr_budget // bytes_per_pair)))
+
         forward_flow_up = raft_small(img2_torch, img1_torch, iters=20, test_mode=True)
         flows_forwards_torch = padder.unpad(forward_flow_up)
+        torch.cuda.empty_cache()
 
         backward_flow_up = raft_small(img1_torch, img2_torch, iters=20, test_mode=True)
         flows_backwards_torch = padder.unpad(backward_flow_up)
@@ -289,6 +305,8 @@ for dir_path in tqdm.tqdm(dir_list):
         masked_tau = nearest_fill_with_scipy(tau[ith:ith+1], mask[ith:ith+1])  # (2, 2, 1920, 1080)
         results.append(masked_tau)
     masked_tau = torch.cat(results, dim=0)  # (t, 4, H, W)
+    del results, tau, forward_tau, backward_tau, mask, flows_forwards_torch, flows_backwards_torch, flows_forwards_mask, flows_backwards_mask
+    gc.collect()
     masked_forward_tau, maksed_backward_tau = masked_tau[:, 0:2, :, :], masked_tau[:, 2:4, :, :]  # (b, n_seq, 1, 2, H, W)
 
     dt = (perf_counter() - t0) / len(img_list)
@@ -311,8 +329,8 @@ for dir_path in tqdm.tqdm(dir_list):
     n_total = n_seq
 
     # Sliding-window inference due to memory limiation
-    if (n_total - 4) % 48 == 0:
-        window = 52
+    window = args.window
+    if (n_total - 4) % (window - 4) == 0:
         discard = 2
         overlap = discard * 2
         step = window - overlap
@@ -337,6 +355,8 @@ for dir_path in tqdm.tqdm(dir_list):
             results.append(result[0, 1:-1])
 
         result = torch.cat(results, dim=0)
+    else:
+        raise ValueError(f"(num_frames - 4) must be divisible by (window - 4), got num_frames={n_total}, window={window}")
 
     dt = (perf_counter() - t0) / len(img_list)
     print(f"Total time for deblurring: {dt:.4f} sec.")
