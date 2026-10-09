@@ -1,29 +1,32 @@
+import numpy as np
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from basicsr.archs.vgg_arch import VGGFeatureExtractor
-from basicsr.utils.registry import LOSS_REGISTRY
-from .loss_util import weighted_loss
 # import pyiqa
 from basicsr.archs.arch_util import flow_warp
-import numpy as np
-_reduction_modes = ['none', 'mean', 'sum']
+from basicsr.archs.vgg_arch import VGGFeatureExtractor
+from basicsr.utils.registry import LOSS_REGISTRY
+
+from .loss_util import weighted_loss
+
+_reduction_modes = ["none", "mean", "sum"]
 
 
 @weighted_loss
 def l1_loss(pred, target):
-    return F.l1_loss(pred, target, reduction='none')
+    return F.l1_loss(pred, target, reduction="none")
 
 
 @weighted_loss
 def mse_loss(pred, target):
-    return F.mse_loss(pred, target, reduction='none')
+    return F.mse_loss(pred, target, reduction="none")
 
 
 @weighted_loss
 def charbonnier_loss(pred, target, eps=1e-12):
-    return torch.sqrt((pred - target)**2 + eps)
+    return torch.sqrt((pred - target) ** 2 + eps)
+
 
 """ @LOSS_REGISTRY.register()
 class LPIPSLoss(nn.Module):
@@ -39,10 +42,10 @@ class LPIPSLoss(nn.Module):
 
 @LOSS_REGISTRY.register()
 class WarpLoss(nn.Module):
-    """warp loss.
-    """
-    def __init__(self, loss_weight=1.0, reduction='mean', eps=1e-12):
-        super(WarpLoss, self).__init__()
+    """warp loss."""
+
+    def __init__(self, loss_weight=1.0, reduction="mean", eps=1e-12):
+        super().__init__()
         # self.model = pyiqa.create_metric('lpips-vgg', as_loss=True)
         self.loss_weight = loss_weight
         self.reduction = reduction
@@ -54,12 +57,17 @@ class WarpLoss(nn.Module):
         # flow: b,t,2,h,w
         # this function cal the warp loss from x1 seq to x2 seq
         # weight (Tensor, optional): of shape (N, C, H, W). Element-wise weights. Default: None.
-        b,t,c,h,w = x1.shape
-        x1_down = F.adaptive_avg_pool2d(x1.reshape(b*t,c,h,w),(h//4,w//4))
-        x2_down = F.adaptive_avg_pool2d(x2.reshape(b*t,c,h,w),(h//4,w//4))
+        b, t, c, h, w = x1.shape
+        x1_down = F.adaptive_avg_pool2d(x1.reshape(b * t, c, h, w), (h // 4, w // 4))
+        x2_down = F.adaptive_avg_pool2d(x2.reshape(b * t, c, h, w), (h // 4, w // 4))
 
-        x1_down_warp = flow_warp(x1_down,flow.reshape(b*t,2,h//4,w//4).permute(0,2,3,1))
-        return  self.loss_weight * charbonnier_loss(x1_down_warp,x2_down ,weight,eps=self.eps, reduction=self.reduction)
+        x1_down_warp = flow_warp(
+            x1_down, flow.reshape(b * t, 2, h // 4, w // 4).permute(0, 2, 3, 1)
+        )
+        return self.loss_weight * charbonnier_loss(
+            x1_down_warp, x2_down, weight, eps=self.eps, reduction=self.reduction
+        )
+
 
 @LOSS_REGISTRY.register()
 class L1Loss(nn.Module):
@@ -71,10 +79,12 @@ class L1Loss(nn.Module):
             Supported choices are 'none' | 'mean' | 'sum'. Default: 'mean'.
     """
 
-    def __init__(self, loss_weight=1.0, reduction='mean'):
-        super(L1Loss, self).__init__()
-        if reduction not in ['none', 'mean', 'sum']:
-            raise ValueError(f'Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}')
+    def __init__(self, loss_weight=1.0, reduction="mean"):
+        super().__init__()
+        if reduction not in ["none", "mean", "sum"]:
+            raise ValueError(
+                f"Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}"
+            )
 
         self.loss_weight = loss_weight
         self.reduction = reduction
@@ -86,7 +96,9 @@ class L1Loss(nn.Module):
             target (Tensor): of shape (N, C, H, W). Ground truth tensor.
             weight (Tensor, optional): of shape (N, C, H, W). Element-wise weights. Default: None.
         """
-        return self.loss_weight * l1_loss(pred, target, weight, reduction=self.reduction)
+        return self.loss_weight * l1_loss(
+            pred, target, weight, reduction=self.reduction
+        )
 
 
 @LOSS_REGISTRY.register()
@@ -99,10 +111,12 @@ class MSELoss(nn.Module):
             Supported choices are 'none' | 'mean' | 'sum'. Default: 'mean'.
     """
 
-    def __init__(self, loss_weight=1.0, reduction='mean'):
-        super(MSELoss, self).__init__()
-        if reduction not in ['none', 'mean', 'sum']:
-            raise ValueError(f'Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}')
+    def __init__(self, loss_weight=1.0, reduction="mean"):
+        super().__init__()
+        if reduction not in ["none", "mean", "sum"]:
+            raise ValueError(
+                f"Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}"
+            )
 
         self.loss_weight = loss_weight
         self.reduction = reduction
@@ -114,7 +128,9 @@ class MSELoss(nn.Module):
             target (Tensor): of shape (N, C, H, W). Ground truth tensor.
             weight (Tensor, optional): of shape (N, C, H, W). Element-wise weights. Default: None.
         """
-        return self.loss_weight * mse_loss(pred, target, weight, reduction=self.reduction)
+        return self.loss_weight * mse_loss(
+            pred, target, weight, reduction=self.reduction
+        )
 
 
 @LOSS_REGISTRY.register()
@@ -132,10 +148,12 @@ class CharbonnierLoss(nn.Module):
         eps (float): A value used to control the curvature near zero. Default: 1e-12.
     """
 
-    def __init__(self, loss_weight=1.0, reduction='mean', eps=1e-12):
-        super(CharbonnierLoss, self).__init__()
-        if reduction not in ['none', 'mean', 'sum']:
-            raise ValueError(f'Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}')
+    def __init__(self, loss_weight=1.0, reduction="mean", eps=1e-12):
+        super().__init__()
+        if reduction not in ["none", "mean", "sum"]:
+            raise ValueError(
+                f"Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}"
+            )
 
         self.loss_weight = loss_weight
         self.reduction = reduction
@@ -148,8 +166,9 @@ class CharbonnierLoss(nn.Module):
             target (Tensor): of shape (N, C, H, W). Ground truth tensor.
             weight (Tensor, optional): of shape (N, C, H, W). Element-wise weights. Default: None.
         """
-        return self.loss_weight * charbonnier_loss(pred, target, weight, eps=self.eps, reduction=self.reduction)
-
+        return self.loss_weight * charbonnier_loss(
+            pred, target, weight, eps=self.eps, reduction=self.reduction
+        )
 
 
 @LOSS_REGISTRY.register()
@@ -176,15 +195,17 @@ class PerceptualLoss(nn.Module):
         criterion (str): Criterion used for perceptual loss. Default: 'l1'.
     """
 
-    def __init__(self,
-                 layer_weights,
-                 vgg_type='vgg19',
-                 use_input_norm=True,
-                 range_norm=False,
-                 perceptual_weight=1.0,
-                 style_weight=0.,
-                 criterion='l1'):
-        super(PerceptualLoss, self).__init__()
+    def __init__(
+        self,
+        layer_weights,
+        vgg_type="vgg19",
+        use_input_norm=True,
+        range_norm=False,
+        perceptual_weight=1.0,
+        style_weight=0.0,
+        criterion="l1",
+    ):
+        super().__init__()
         self.perceptual_weight = perceptual_weight
         self.style_weight = style_weight
         self.layer_weights = layer_weights
@@ -192,17 +213,18 @@ class PerceptualLoss(nn.Module):
             layer_name_list=list(layer_weights.keys()),
             vgg_type=vgg_type,
             use_input_norm=use_input_norm,
-            range_norm=range_norm)
+            range_norm=range_norm,
+        )
 
         self.criterion_type = criterion
-        if self.criterion_type == 'l1':
+        if self.criterion_type == "l1":
             self.criterion = torch.nn.L1Loss()
-        elif self.criterion_type == 'l2':
+        elif self.criterion_type == "l2":
             self.criterion = torch.nn.L2loss()
-        elif self.criterion_type == 'fro':
+        elif self.criterion_type == "fro":
             self.criterion = None
         else:
-            raise NotImplementedError(f'{criterion} criterion has not been supported.')
+            raise NotImplementedError(f"{criterion} criterion has not been supported.")
 
     def forward(self, x, gt):
         """Forward function.
@@ -222,10 +244,16 @@ class PerceptualLoss(nn.Module):
         if self.perceptual_weight > 0:
             percep_loss = 0
             for k in x_features.keys():
-                if self.criterion_type == 'fro':
-                    percep_loss += torch.norm(x_features[k] - gt_features[k], p='fro') * self.layer_weights[k]
+                if self.criterion_type == "fro":
+                    percep_loss += (
+                        torch.norm(x_features[k] - gt_features[k], p="fro")
+                        * self.layer_weights[k]
+                    )
                 else:
-                    percep_loss += self.criterion(x_features[k], gt_features[k]) * self.layer_weights[k]
+                    percep_loss += (
+                        self.criterion(x_features[k], gt_features[k])
+                        * self.layer_weights[k]
+                    )
             percep_loss *= self.perceptual_weight
         else:
             percep_loss = None
@@ -234,12 +262,23 @@ class PerceptualLoss(nn.Module):
         if self.style_weight > 0:
             style_loss = 0
             for k in x_features.keys():
-                if self.criterion_type == 'fro':
-                    style_loss += torch.norm(
-                        self._gram_mat(x_features[k]) - self._gram_mat(gt_features[k]), p='fro') * self.layer_weights[k]
+                if self.criterion_type == "fro":
+                    style_loss += (
+                        torch.norm(
+                            self._gram_mat(x_features[k])
+                            - self._gram_mat(gt_features[k]),
+                            p="fro",
+                        )
+                        * self.layer_weights[k]
+                    )
                 else:
-                    style_loss += self.criterion(self._gram_mat(x_features[k]), self._gram_mat(
-                        gt_features[k])) * self.layer_weights[k]
+                    style_loss += (
+                        self.criterion(
+                            self._gram_mat(x_features[k]),
+                            self._gram_mat(gt_features[k]),
+                        )
+                        * self.layer_weights[k]
+                    )
             style_loss *= self.style_weight
         else:
             style_loss = None
@@ -272,40 +311,50 @@ class WarpLossv2(nn.Module):
             Supported choices are 'none' | 'mean' | 'sum'. Default: 'mean'.
     """
 
-    def __init__(self, loss_weight=1.0, reduction='mean'):
-        super(WarpLossv2, self).__init__()
-        if reduction not in ['none', 'mean', 'sum']:
-            raise ValueError(f'Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}')
+    def __init__(self, loss_weight=1.0, reduction="mean"):
+        super().__init__()
+        if reduction not in ["none", "mean", "sum"]:
+            raise ValueError(
+                f"Unsupported reduction mode: {reduction}. Supported ones are: {_reduction_modes}"
+            )
 
         self.loss_weight = loss_weight
         self.reduction = reduction
 
-    def forward(self,  gt_frames, flow_backwards, flow_forwards, weight=None, **kwargs):
+    def forward(self, gt_frames, flow_backwards, flow_forwards, weight=None, **kwargs):
         """
         Args:
             pred (Tensor): of shape (N, C, H, W). Predicted tensor.
             target (Tensor): of shape (N, C, H, W). Ground truth tensor.
             weight (Tensor, optional): of shape (N, C, H, W). Element-wise weights. Default: None.
         """
-        n,t,c,h,w = gt_frames.shape
+        n, t, c, h, w = gt_frames.shape
         lqs_1 = gt_frames[:, :-1, :, :, :].reshape(-1, c, h, w)
         lqs_2 = gt_frames[:, 1:, :, :, :].reshape(-1, c, h, w)
-        lqs_1 = F.adaptive_avg_pool2d(lqs_1,(h//4,w//4))
-        lqs_2 = F.adaptive_avg_pool2d(lqs_2,(h//4,w//4))
-        lqs_1_warp_2 = flow_warp(lqs_1,flow_forwards.reshape(-1,2,h//4,w//4).permute(0, 2, 3, 1))
-        lqs_2_warp_1 = flow_warp(lqs_2,flow_backwards.reshape(-1,2,h//4,w//4).permute(0, 2, 3, 1))
-        flow_forwards_loss = l1_loss(lqs_1_warp_2, lqs_2, weight, reduction=self.reduction)
-        flow_backwards_loss = l1_loss(lqs_2_warp_1, lqs_1, weight, reduction=self.reduction)
-        flow_loss = 0.5*flow_forwards_loss + 0.5*flow_backwards_loss
+        lqs_1 = F.adaptive_avg_pool2d(lqs_1, (h // 4, w // 4))
+        lqs_2 = F.adaptive_avg_pool2d(lqs_2, (h // 4, w // 4))
+        lqs_1_warp_2 = flow_warp(
+            lqs_1, flow_forwards.reshape(-1, 2, h // 4, w // 4).permute(0, 2, 3, 1)
+        )
+        lqs_2_warp_1 = flow_warp(
+            lqs_2, flow_backwards.reshape(-1, 2, h // 4, w // 4).permute(0, 2, 3, 1)
+        )
+        flow_forwards_loss = l1_loss(
+            lqs_1_warp_2, lqs_2, weight, reduction=self.reduction
+        )
+        flow_backwards_loss = l1_loss(
+            lqs_2_warp_1, lqs_1, weight, reduction=self.reduction
+        )
+        flow_loss = 0.5 * flow_forwards_loss + 0.5 * flow_backwards_loss
 
         return self.loss_weight * flow_loss
 
+
 @LOSS_REGISTRY.register()
 class PSNRLoss(nn.Module):
-
-    def __init__(self, loss_weight=1.0, reduction='mean', toY=False):
-        super(PSNRLoss, self).__init__()
-        assert reduction == 'mean'
+    def __init__(self, loss_weight=1.0, reduction="mean", toY=False):
+        super().__init__()
+        assert reduction == "mean"
         self.loss_weight = loss_weight
         self.scale = 10 / np.log(10)
         self.toY = toY
@@ -315,39 +364,46 @@ class PSNRLoss(nn.Module):
     def forward(self, pred, target):
         if len(pred.size()) != 4:
             b, t, c, h, w = pred.shape
-            pred = pred.view(b*t, c, h, w)
-            target = target.view(b*t, c, h, w)
+            pred = pred.view(b * t, c, h, w)
+            target = target.view(b * t, c, h, w)
 
         if self.toY:
             if self.first:
                 self.coef = self.coef.to(pred.device)
                 self.first = False
 
-            pred = (pred * self.coef).sum(dim=1).unsqueeze(dim=1) + 16.
-            target = (target * self.coef).sum(dim=1).unsqueeze(dim=1) + 16.
+            pred = (pred * self.coef).sum(dim=1).unsqueeze(dim=1) + 16.0
+            target = (target * self.coef).sum(dim=1).unsqueeze(dim=1) + 16.0
 
-            pred, target = pred / 255., target / 255.
-            pass
+            pred, target = pred / 255.0, target / 255.0
 
-        return self.loss_weight * self.scale * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+        return (
+            self.loss_weight
+            * self.scale
+            * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+        )
 
 
 class CharbonnierLoss(nn.Module):
     def __init__(self, eps: float = 1e-3):
         super().__init__()
         self.eps = eps
+
     def forward(self, x, y):
-        return torch.mean(torch.sqrt((x - y) ** 2 + self.eps ** 2))
+        return torch.mean(torch.sqrt((x - y) ** 2 + self.eps**2))
+
 
 class VGG19Feature(nn.Module):
     """VGG-19 conv3_2 features for contrastive loss.
     Use torchvision if available; here we create a light stub requiring user to load weights externally
     or swap with torchvision.models.vgg19(pretrained=True).features[:12].
     """
+
     def __init__(self):
         super().__init__()
         try:
-            from torchvision.models import vgg19, VGG19_Weights
+            from torchvision.models import VGG19_Weights, vgg19
+
             self.features = vgg19(weights=VGG19_Weights.IMAGENET1K_V1).features[:12]
             for p in self.features.parameters():
                 p.requires_grad = False
@@ -355,15 +411,19 @@ class VGG19Feature(nn.Module):
             # Minimal conv stack (not pretrained) as a placeholder
             layers = []
             in_ch = 3
-            cfg = [64, 64, 'M', 128, 128, 'M', 256, 256]
+            cfg = [64, 64, "M", 128, 128, "M", 256, 256]
             for v in cfg:
-                if v == 'M':
+                if v == "M":
                     layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
                 else:
-                    layers += [nn.Conv2d(in_ch, v, kernel_size=3, padding=1), nn.ReLU(inplace=True)]
+                    layers += [
+                        nn.Conv2d(in_ch, v, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                    ]
                     in_ch = v
             self.features = nn.Sequential(*layers)
             for p in self.features.parameters():
                 p.requires_grad = False
+
     def forward(self, x):
         return self.features(x)

@@ -20,49 +20,38 @@ from inference_utils import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    '--model_size',
+    "--model_size",
     type=int,
     choices=[48, 64, 96, 128],
     default=48,
-    help='GyroDVD model size'
+    help="GyroDVD model size",
 )
+parser.add_argument("--dataset_root", help="dataset root", default="dataset/GyroReal")
+parser.add_argument("--out_path", help="output path")
 parser.add_argument(
-    '--dataset_root',
-    help="dataset root",
-    default='dataset/GyroReal'
-)
-parser.add_argument(
-    '--out_path',
-    help="output path"
-)
-parser.add_argument(
-    '--window',
+    "--window",
     type=int,
     default=16,
     help="temporal sliding-window length (frames). Smaller uses less GPU memory; "
-         "(num_frames - 4) must be divisible by (window - 4). The original setting is 52 (24GB+ GPU)."
+    "(num_frames - 4) must be divisible by (window - 4). The original setting is 52 (24GB+ GPU).",
 )
 args = parser.parse_args()
-viz_path = args.out_path 
-source_dataset = args.dataset_root 
+viz_path = args.out_path
+source_dataset = args.dataset_root
 
 
 # Build GyroDVD model
 module_name = "basicsr.archs.GyroDVD_arch"
 model_name = f"GyroDVD_{args.model_size}"
-net = getattr(
-    importlib.import_module(module_name),
-    model_name
-)
+net = getattr(importlib.import_module(module_name), model_name)
 
 # Create model and Load pretrained weights
 model = net()
 model.eval()
 model.cuda()
 weight_path = f"model_zoos/GyroDVD_{args.model_size}.pth"
-load_net = torch.load(
-    weight_path, map_location=lambda storage, loc: storage)
-load_net = load_net['params']
+load_net = torch.load(weight_path, map_location=lambda storage, loc: storage)
+load_net = load_net["params"]
 model.load_state_dict(load_net, strict=True)
 
 
@@ -88,24 +77,25 @@ raft_small.eval()
 raft_small.max_batch = 32
 
 
-dir_list = glob.glob(source_dataset + '/**/*')
+dir_list = glob.glob(source_dataset + "/**/*")
 for dir_path in tqdm.tqdm(dir_list):
-    img_list = glob.glob(os.path.join(dir_path, 'blur/*.jpg'))
+    img_list = glob.glob(os.path.join(dir_path, "blur/*.jpg"))
     img_list = sorted(img_list)
 
     # Load gyro and camera metadata
-    gyro = np.loadtxt(os.path.join(dir_path, 'meta_info/gyro.csv'), delimiter=',')
-    metainfo = np.loadtxt(os.path.join(dir_path, 'meta_info/cam_metainfo.csv'), delimiter=',')
+    gyro = np.loadtxt(os.path.join(dir_path, "meta_info/gyro.csv"), delimiter=",")
+    metainfo = np.loadtxt(
+        os.path.join(dir_path, "meta_info/cam_metainfo.csv"), delimiter=","
+    )
     gyro[:, -1] = nano2sec(gyro[:, -1])
 
     # Load input images
-    imgs = [cv2.imread(path)[:, :, ::-1].astype('float32')/255.0 for path in img_list]
+    imgs = [cv2.imread(path)[:, :, ::-1].astype("float32") / 255.0 for path in img_list]
     # The gyro data assumes portrait orientation, so we rotate the images.
     imgs = [cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE) for img in imgs]
     imgs_torch = img2tensor(imgs, bgr2rgb=False, float32=True)
     imgs_torch = torch.stack(imgs_torch, dim=0).unsqueeze(0)
     del imgs  # free the numpy copies (~2.5GB for 100 1080p frames)
-
 
     # Compute center timestamps
     center_timestamps = []
@@ -131,8 +121,12 @@ for dir_path in tqdm.tqdm(dir_list):
     dT_list = []
     for ith, img_path in enumerate(img_list):
         # Parse timestamps from filename
-        split_name = os.path.basename(img_path).split('_')
-        frame_num, start_stamp, end_stamp = int(split_name[0]), int(split_name[1]), int(split_name[3])
+        split_name = os.path.basename(img_path).split("_")
+        frame_num, start_stamp, end_stamp = (
+            int(split_name[0]),
+            int(split_name[1]),
+            int(split_name[3]),
+        )
         exposure = int(split_name[3]) - int(split_name[2])
 
         start_stamp = nano2sec(start_stamp)
@@ -145,15 +139,21 @@ for dir_path in tqdm.tqdm(dir_list):
 
         # Timestamps for rotation-induced flow
         if ith == 0:
-            prev_stamp = center_timestamps[ith] - (center_timestamps[ith+1] - center_timestamps[ith])
-            next_stamp = center_timestamps[ith+1]
-        elif ith == (len(img_list)-1):
-            prev_stamp = center_timestamps[ith-1]
-            next_stamp = center_timestamps[ith] + (center_timestamps[ith] - center_timestamps[ith-1])
+            prev_stamp = center_timestamps[ith] - (
+                center_timestamps[ith + 1] - center_timestamps[ith]
+            )
+            next_stamp = center_timestamps[ith + 1]
+        elif ith == (len(img_list) - 1):
+            prev_stamp = center_timestamps[ith - 1]
+            next_stamp = center_timestamps[ith] + (
+                center_timestamps[ith] - center_timestamps[ith - 1]
+            )
         else:
-            prev_stamp = center_timestamps[ith-1]
-            next_stamp = center_timestamps[ith+1]
-        all_timestamp = np.concatenate([np.array([prev_stamp]), timestamp_kers, np.array([next_stamp])])
+            prev_stamp = center_timestamps[ith - 1]
+            next_stamp = center_timestamps[ith + 1]
+        all_timestamp = np.concatenate(
+            [np.array([prev_stamp]), timestamp_kers, np.array([next_stamp])]
+        )
 
         # Forward gyro integration (center -> next frame)
         center = len(all_timestamp) // 2
@@ -161,10 +161,11 @@ for dir_path in tqdm.tqdm(dir_list):
         preint = PreintegratedImuMeasurements(imu_params, bias)
         for i in range(center, len(all_timestamp) - 1):
             # rotation is accumulated by preint
-            Ra = integrate_only_gyro(preint, all_timestamp[i], all_timestamp[i + 1], gyro[:, -1], gyro[:, :3])
+            Ra = integrate_only_gyro(
+                preint, all_timestamp[i], all_timestamp[i + 1], gyro[:, -1], gyro[:, :3]
+            )
             Ra = R_imu_cam * Ra * R_cam_imu
             forward_rotations.append(Ra.matrix())
-
 
         # Backward gyro integration (center -> previous frame)
         backward_rotations = []
@@ -172,7 +173,13 @@ for dir_path in tqdm.tqdm(dir_list):
             # Backward rotations are computed from scratch, It's not accumulated.
             # This implementation can be improved by accumulating.
             preint = PreintegratedImuMeasurements(imu_params, bias)
-            Rb = integrate_only_gyro(preint, all_timestamp[i], all_timestamp[center], gyro[:, -1], gyro[:, :3])
+            Rb = integrate_only_gyro(
+                preint,
+                all_timestamp[i],
+                all_timestamp[center],
+                gyro[:, -1],
+                gyro[:, :3],
+            )
             Rb = R_imu_cam * Rb * R_cam_imu
             backward_rotations.append(Rb.inverse().matrix())
 
@@ -181,12 +188,10 @@ for dir_path in tqdm.tqdm(dir_list):
         rot_np = np.stack(rot_list, 0)
         rot_mat_list.append(rot_np)
 
-
     # Per-frame rotation matrices
-    rot_mat = np.stack(rot_mat_list, axis=0).astype('float32') # (t, 10, 3, 3)
+    rot_mat = np.stack(rot_mat_list, axis=0).astype("float32")  # (t, 10, 3, 3)
     dt = (perf_counter() - t0) / len(img_list)
     print(f"Total time for gyro integration: {dt:.4f} sec.")
-
 
     # Split rotations for kernels and rotation-induced flow
     rot_mat_split = np.split(rot_mat, 10, axis=1)
@@ -199,11 +204,19 @@ for dir_path in tqdm.tqdm(dir_list):
     with torch.no_grad():
         b, t, c, h, w = imgs_torch.shape
 
-
         # Downsample images before RAFT inference.
         # RAFT can be less stable on high-resolution inputs,
         # so optical flow is estimated at half resolution and later rescaled.
-        imgs_torch_resize = torch.clamp(F.interpolate(imgs_torch.view(b*t, c, h, w), scale_factor=0.5, mode='bicubic', align_corners=True), 0, 1).cuda()
+        imgs_torch_resize = torch.clamp(
+            F.interpolate(
+                imgs_torch.view(b * t, c, h, w),
+                scale_factor=0.5,
+                mode="bicubic",
+                align_corners=True,
+            ),
+            0,
+            1,
+        ).cuda()
 
         # Consecutive frame pairs
         img1_torch = imgs_torch_resize[:-1, ...]
@@ -215,9 +228,9 @@ for dir_path in tqdm.tqdm(dir_list):
 
         # RAFT's all-pairs correlation volume (+ pyramid) costs ~(h/8*w/8)^2 * 4 bytes * 4/3 per pair,
         # so choose the batch size from the resolution to stay within a fixed memory budget.
-        corr_budget = 3 * 1024 ** 3
+        corr_budget = 3 * 1024**3
         n_tokens = (img1_torch.shape[-2] // 8) * (img1_torch.shape[-1] // 8)
-        bytes_per_pair = n_tokens ** 2 * 4 * 4 / 3
+        bytes_per_pair = n_tokens**2 * 4 * 4 / 3
         raft_small.max_batch = max(1, min(32, int(corr_budget // bytes_per_pair)))
 
         forward_flow_up = raft_small(img2_torch, img1_torch, iters=20, test_mode=True)
@@ -228,8 +241,12 @@ for dir_path in tqdm.tqdm(dir_list):
         flows_backwards_torch = padder.unpad(backward_flow_up)
 
         # Build reliable flow masks
-        flows_backwards_cmap = fbConsistencyCheck(flows_forwards_torch, flows_backwards_torch)
-        flows_forwards_cmap = fbConsistencyCheck(flows_backwards_torch, flows_forwards_torch)
+        flows_backwards_cmap = fbConsistencyCheck(
+            flows_forwards_torch, flows_backwards_torch
+        )
+        flows_forwards_cmap = fbConsistencyCheck(
+            flows_backwards_torch, flows_forwards_torch
+        )
 
         cycle_th = 8 / 2
         flows_backwards_mask = (flows_backwards_cmap < cycle_th).float()
@@ -245,12 +262,11 @@ for dir_path in tqdm.tqdm(dir_list):
     dt = (perf_counter() - t0) / len(img_list)
     print(f"Total time for optical flows: {dt:.4f} sec.")
 
-
     # Clear temporary tensors and GPU memory
-    flows_forwards_torch = flows_forwards_torch.detach().cpu()#.contiguous()
-    flows_backwards_torch = flows_backwards_torch.detach().cpu()#.contiguous()
-    flows_forwards_mask  = flows_forwards_mask.detach().cpu()#.contiguous()
-    flows_backwards_mask = flows_backwards_mask.detach().cpu()#.contiguous()
+    flows_forwards_torch = flows_forwards_torch.detach().cpu()  # .contiguous()
+    flows_backwards_torch = flows_backwards_torch.detach().cpu()  # .contiguous()
+    flows_forwards_mask = flows_forwards_mask.detach().cpu()  # .contiguous()
+    flows_backwards_mask = flows_backwards_mask.detach().cpu()  # .contiguous()
     imgs_torch = imgs_torch.detach().cpu()
 
     del imgs_torch_resize, img1_torch, img2_torch
@@ -273,21 +289,37 @@ for dir_path in tqdm.tqdm(dir_list):
     t0 = perf_counter()
 
     # Compute rotation-induced flow
-    coordinate_resize = F.interpolate(coordinate, scale_factor=0.5, mode='bilinear', align_corners=True)
-    forward_flows_gyro = compute_traj_from_rots(rot_mat_forward_flows_torch.unsqueeze(0), coordinate_resize.unsqueeze(0), K, K_inv)[0]
-    backward_flows_gyro = compute_traj_from_rots(rot_mat_backward_flows_torch.unsqueeze(0), coordinate_resize.unsqueeze(0), K, K_inv)[0]
+    coordinate_resize = F.interpolate(
+        coordinate, scale_factor=0.5, mode="bilinear", align_corners=True
+    )
+    forward_flows_gyro = compute_traj_from_rots(
+        rot_mat_forward_flows_torch.unsqueeze(0),
+        coordinate_resize.unsqueeze(0),
+        K,
+        K_inv,
+    )[0]
+    backward_flows_gyro = compute_traj_from_rots(
+        rot_mat_backward_flows_torch.unsqueeze(0),
+        coordinate_resize.unsqueeze(0),
+        K,
+        K_inv,
+    )[0]
 
-    center_timestamps_torch = torch.from_numpy(np.array(center_timestamps)) # (t)
+    center_timestamps_torch = torch.from_numpy(np.array(center_timestamps))  # (t)
 
     # backward_tau, from current frame to next frame
-    backward_tau = (flows_backwards_torch - backward_flows_gyro[:-1]) / torch.abs(center_timestamps_torch[1:] - center_timestamps_torch[:-1]).view(-1, 1, 1, 1)
+    backward_tau = (flows_backwards_torch - backward_flows_gyro[:-1]) / torch.abs(
+        center_timestamps_torch[1:] - center_timestamps_torch[:-1]
+    ).view(-1, 1, 1, 1)
 
     # forward_tau, from current from to previous frame
-    forward_tau = (flows_forwards_torch - forward_flows_gyro[1:]) / torch.abs(center_timestamps_torch[1:] - center_timestamps_torch[:-1]).view(-1, 1, 1, 1)
+    forward_tau = (flows_forwards_torch - forward_flows_gyro[1:]) / torch.abs(
+        center_timestamps_torch[1:] - center_timestamps_torch[:-1]
+    ).view(-1, 1, 1, 1)
 
     # for handling the first and last frames
-    backward_tau = torch.cat([backward_tau, forward_tau[-1:]*-1], dim=0)
-    forward_tau = torch.cat([backward_tau[0:1]*-1, forward_tau], dim=0)
+    backward_tau = torch.cat([backward_tau, forward_tau[-1:] * -1], dim=0)
+    forward_tau = torch.cat([backward_tau[0:1] * -1, forward_tau], dim=0)
     tau = torch.cat([forward_tau, backward_tau], dim=1)
 
     # Combine flow-consistency masks
@@ -302,12 +334,27 @@ for dir_path in tqdm.tqdm(dir_list):
     # Filterting tau using the flow-consistency masks
     results = []
     for ith, img_path in enumerate(img_list):
-        masked_tau = nearest_fill_with_scipy(tau[ith:ith+1], mask[ith:ith+1])  # (2, 2, 1920, 1080)
+        masked_tau = nearest_fill_with_scipy(
+            tau[ith : ith + 1], mask[ith : ith + 1]
+        )  # (2, 2, 1920, 1080)
         results.append(masked_tau)
     masked_tau = torch.cat(results, dim=0)  # (t, 4, H, W)
-    del results, tau, forward_tau, backward_tau, mask, flows_forwards_torch, flows_backwards_torch, flows_forwards_mask, flows_backwards_mask
+    del (
+        results,
+        tau,
+        forward_tau,
+        backward_tau,
+        mask,
+        flows_forwards_torch,
+        flows_backwards_torch,
+        flows_forwards_mask,
+        flows_backwards_mask,
+    )
     gc.collect()
-    masked_forward_tau, maksed_backward_tau = masked_tau[:, 0:2, :, :], masked_tau[:, 2:4, :, :]  # (b, n_seq, 1, 2, H, W)
+    masked_forward_tau, maksed_backward_tau = (
+        masked_tau[:, 0:2, :, :],
+        masked_tau[:, 2:4, :, :],
+    )  # (b, n_seq, 1, 2, H, W)
 
     dt = (perf_counter() - t0) / len(img_list)
     print(f"Total time for masking: {dt:.4f} sec.")
@@ -325,7 +372,7 @@ for dir_path in tqdm.tqdm(dir_list):
     t0 = perf_counter()
 
     K_cu, K_inv_cu = K.cuda(), K_inv.cuda()
-    coordinate = coordinate.unsqueeze(0) 
+    coordinate = coordinate.unsqueeze(0)
     n_total = n_seq
 
     # Sliding-window inference due to memory limiation
@@ -350,13 +397,25 @@ for dir_path in tqdm.tqdm(dir_list):
             in_K_inv_cu = K_inv_cu[start:end]
 
             # Generate the final blur kernels in test_by_patch reducing the memory
-            result = test_by_patch(model, in_lq, coordinate, in_rot_mat, in_masked_forward_tau, in_maksed_backward_tau, in_dT, in_K_cu, in_K_inv_cu)
+            result = test_by_patch(
+                model,
+                in_lq,
+                coordinate,
+                in_rot_mat,
+                in_masked_forward_tau,
+                in_maksed_backward_tau,
+                in_dT,
+                in_K_cu,
+                in_K_inv_cu,
+            )
             # Ignore boundary frames
             results.append(result[0, 1:-1])
 
         result = torch.cat(results, dim=0)
     else:
-        raise ValueError(f"(num_frames - 4) must be divisible by (window - 4), got num_frames={n_total}, window={window}")
+        raise ValueError(
+            f"(num_frames - 4) must be divisible by (window - 4), got num_frames={n_total}, window={window}"
+        )
 
     dt = (perf_counter() - t0) / len(img_list)
     print(f"Total time for deblurring: {dt:.4f} sec.")
@@ -371,9 +430,7 @@ for dir_path in tqdm.tqdm(dir_list):
 
     # Save restored frames
     for i, (sr_img, lq_path) in enumerate(zip(sr_img_list, path_list)):
-        video_name = lq_path.split('/')[-3]
-        img_name = os.path.basename(lq_path).replace('.jpg', '.png')
-        save_img_path = os.path.join(
-            viz_path, video_name,
-            f'{img_name}')
+        video_name = lq_path.split("/")[-3]
+        img_name = os.path.basename(lq_path).replace(".jpg", ".png")
+        save_img_path = os.path.join(viz_path, video_name, f"{img_name}")
         imwrite(sr_img, save_img_path)

@@ -21,9 +21,9 @@ network_g:
 datasets:
   train:
     name: GyroVD-train
-    phase: 'train'
+    phase: "train"
     type: GyroVD_dataset
-    filename_tmpl: '{}'
+    filename_tmpl: "{}"
     io_backend:
       type: disk
 
@@ -41,19 +41,19 @@ datasets:
 
     # datasets opt
     # dir opt
-    dataset_root: 'dataset/GyroVD_Syn_train'
-    dataset_root_tau: 'dataset/GyroVD_Syn_train_tau'
-    datalist: 'datalist/GyroVD_Syn_train.txt'
+    dataset_root: "dataset/GyroVD_Syn_train"
+    dataset_root_tau: "dataset/GyroVD_Syn_train_tau"
+    datalist: "datalist/GyroVD_Syn_train.txt"
 
     load_tau: true
-    RSBlur : true
+    RSBlur: true
     n_sequence: 13
 
   val:
     name: GyroVD-test
-    phase: 'val'
+    phase: "val"
     type: GyroVD_dataset
-    filename_tmpl: '{}'
+    filename_tmpl: "{}"
     io_backend:
       type: disk
 
@@ -66,14 +66,14 @@ datasets:
 
     # datasets opt
     # dir opt
-    dataset_root: 'dataset/GyroVD_Syn_test'
-    dataset_root_tau: 'dataset/GyroVD_Syn_test_tau'
-    datalist: 'datalist/GyroVD_Syn_test.txt'
+    dataset_root: "dataset/GyroVD_Syn_test"
+    dataset_root_tau: "dataset/GyroVD_Syn_test_tau"
+    datalist: "datalist/GyroVD_Syn_test.txt"
 
     load_tau: true
-    RSBlur : false
+    RSBlur: false
     n_sequence: 12
-  
+
 path:
   pretrain_network_g: ~
   strict_load_g: true
@@ -115,7 +115,6 @@ val:
     ssim:
       type: ssim_calculate
 
-    
 # logging settings
 logger:
   print_freq: 100
@@ -125,7 +124,6 @@ logger:
     project: ~
     resume_id: ~
     wandb_name: ~
-
 
 # dist training settings
 dist_params:

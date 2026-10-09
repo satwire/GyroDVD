@@ -1,14 +1,13 @@
-import numpy as np
 import torch
-import random
-import pickle as pkl
 
 
 def rgb2lin_pt(x):
     return torch.pow(x, 2.2)
 
+
 def lin2rgb_pt(x):
-    return torch.pow(x, 1/2.2)
+    return torch.pow(x, 1 / 2.2)
+
 
 def apply_cmatrix(img, matrix):
     # img : (b, h, w, c)
@@ -32,22 +31,22 @@ def mosaic_bayer(image, pattern):
     """Extracts RGGB Bayer planes from an RGB image."""
     shape = image.shape
 
-    if pattern == 'RGGB':
+    if pattern == "RGGB":
         red = image[:, 0::2, 0::2, 0]  # (b, h/2, w/2)
         green_red = image[:, 0::2, 1::2, 1]
         green_blue = image[:, 1::2, 0::2, 1]
         blue = image[:, 1::2, 1::2, 2]
-    elif pattern == 'BGGR':
+    elif pattern == "BGGR":
         red = image[:, 0::2, 0::2, 2]  # (b, h/2, w/2)
         green_red = image[:, 0::2, 1::2, 1]
         green_blue = image[:, 1::2, 0::2, 1]
         blue = image[:, 1::2, 1::2, 0]
-    elif pattern == 'GRBG':
+    elif pattern == "GRBG":
         red = image[:, 0::2, 0::2, 1]  # (b, h/2, w/2)
         green_red = image[:, 0::2, 1::2, 0]
         green_blue = image[:, 1::2, 0::2, 2]
         blue = image[:, 1::2, 1::2, 1]
-    elif pattern == 'GBRG':
+    elif pattern == "GBRG":
         red = image[:, 0::2, 0::2, 1]  # (b, h/2, w/2)
         green_red = image[:, 0::2, 1::2, 2]
         green_blue = image[:, 1::2, 0::2, 0]
@@ -67,7 +66,9 @@ def add_Poisson_noise_random(img, beta1, beta2):
     noisy_img = noisy_img * random_K_v
 
     random_other = beta2.view(-1, 1, 1, 1).to(img.device)
-    noisy_img = noisy_img + (torch.normal(torch.zeros_like(noisy_img), std=1) * torch.sqrt(random_other))
+    noisy_img = noisy_img + (
+        torch.normal(torch.zeros_like(noisy_img), std=1) * torch.sqrt(random_other)
+    )
 
     return noisy_img
 
@@ -77,13 +78,13 @@ def WB_img(img, pattern, fr_now, fb_now):
     blue_gains = fb_now
     green_gains = torch.ones_like(red_gains)
 
-    if pattern == 'RGGB':
+    if pattern == "RGGB":
         gains = torch.cat([red_gains, green_gains, green_gains, blue_gains], dim=1)
-    elif pattern == 'BGGR':
+    elif pattern == "BGGR":
         gains = torch.cat([blue_gains, green_gains, green_gains, red_gains], dim=1)
-    elif pattern == 'GRBG':
+    elif pattern == "GRBG":
         gains = torch.cat([green_gains, red_gains, blue_gains, green_gains], dim=1)
-    elif pattern == 'GBRG':
+    elif pattern == "GBRG":
         gains = torch.cat([green_gains, blue_gains, red_gains, green_gains], dim=1)
 
     gains = gains[:, None, None, :]

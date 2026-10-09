@@ -121,7 +121,7 @@ __device__ scalar_t get_gradient_weight(scalar_t argmax_h, scalar_t argmax_w,
 
   if (argmax_h <= -1 || argmax_h >= height || argmax_w <= -1 || argmax_w >= width)
   {
-    //empty
+    // empty
     return 0;
   }
 
@@ -150,7 +150,7 @@ __device__ scalar_t get_coordinate_weight(scalar_t argmax_h, scalar_t argmax_w,
 
   if (argmax_h <= -1 || argmax_h >= height || argmax_w <= -1 || argmax_w >= width)
   {
-    //empty
+    // empty
     return 0;
   }
 
@@ -211,7 +211,7 @@ __global__ void deformable_im2col_gpu_kernel(const int n, const scalar_t *data_i
     const int h_in = h_col * stride_h - pad_h;
     const int w_in = w_col * stride_w - pad_w;
     scalar_t *data_col_ptr = data_col + ((c_col * batch_size + b_col) * height_col + h_col) * width_col + w_col;
-    //const scalar_t* data_im_ptr = data_im + ((b_col * num_channels + c_im) * height + h_in) * width + w_in;
+    // const scalar_t* data_im_ptr = data_im + ((b_col * num_channels + c_im) * height + h_in) * width + w_in;
     const scalar_t *data_im_ptr = data_im + (b_col * num_channels + c_im) * height * width;
     const scalar_t *data_offset_ptr = data_offset + (b_col * deformable_group + deformable_group_index) * 2 * kernel_h * kernel_w * height_col * width_col;
 
@@ -228,11 +228,11 @@ __global__ void deformable_im2col_gpu_kernel(const int n, const scalar_t *data_i
         const scalar_t w_im = w_in + j * dilation_w + offset_w;
         if (h_im > -1 && w_im > -1 && h_im < height && w_im < width)
         {
-          //const scalar_t map_h = i * dilation_h + offset_h;
-          //const scalar_t map_w = j * dilation_w + offset_w;
-          //const int cur_height = height - h_in;
-          //const int cur_width = width - w_in;
-          //val = deformable_im2col_bilinear(data_im_ptr, width, cur_height, cur_width, map_h, map_w);
+          // const scalar_t map_h = i * dilation_h + offset_h;
+          // const scalar_t map_w = j * dilation_w + offset_w;
+          // const int cur_height = height - h_in;
+          // const int cur_width = width - w_in;
+          // val = deformable_im2col_bilinear(data_im_ptr, width, cur_height, cur_width, map_h, map_w);
           val = deformable_im2col_bilinear(data_im_ptr, width, height, width, h_im, w_im);
         }
         *data_col_ptr = val;
@@ -257,7 +257,8 @@ void deformable_im2col(
   int channel_per_deformable_group = channels / deformable_group;
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      data_im.scalar_type(), "deformable_im2col_gpu", ([&] {
+      data_im.scalar_type(), "deformable_im2col_gpu", ([&]
+                                                       {
         const scalar_t *data_im_ = data_im.data_ptr<scalar_t>();
         const scalar_t *data_offset_ = data_offset.data_ptr<scalar_t>();
         scalar_t *data_col_ = data_col.data_ptr<scalar_t>();
@@ -266,8 +267,7 @@ void deformable_im2col(
             num_kernels, data_im_, data_offset_, height, width, ksize_h, ksize_w,
             pad_h, pad_w, stride_h, stride_w, dilation_h, dilation_w,
             channel_per_deformable_group, parallel_imgs, channels, deformable_group,
-            height_col, width_col, data_col_);
-      }));
+            height_col, width_col, data_col_); }));
 
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess)
@@ -351,7 +351,8 @@ void deformable_col2im(
   int channel_per_deformable_group = channels / deformable_group;
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      data_col.scalar_type(), "deformable_col2im_gpu", ([&] {
+      data_col.scalar_type(), "deformable_col2im_gpu", ([&]
+                                                        {
         const scalar_t *data_col_ = data_col.data_ptr<scalar_t>();
         const scalar_t *data_offset_ = data_offset.data_ptr<scalar_t>();
         scalar_t *grad_im_ = grad_im.data_ptr<scalar_t>();
@@ -360,8 +361,7 @@ void deformable_col2im(
             num_kernels, data_col_, data_offset_, channels, height, width, ksize_h,
             ksize_w, pad_h, pad_w, stride_h, stride_w,
             dilation_h, dilation_w, channel_per_deformable_group,
-            parallel_imgs, deformable_group, height_col, width_col, grad_im_);
-      }));
+            parallel_imgs, deformable_group, height_col, width_col, grad_im_); }));
 
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess)
@@ -449,7 +449,8 @@ void deformable_col2im_coord(
   int channel_per_deformable_group = channels * ksize_h * ksize_w / deformable_group;
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      data_col.scalar_type(), "deformable_col2im_coord_gpu", ([&] {
+      data_col.scalar_type(), "deformable_col2im_coord_gpu", ([&]
+                                                              {
         const scalar_t *data_col_ = data_col.data_ptr<scalar_t>();
         const scalar_t *data_im_ = data_im.data_ptr<scalar_t>();
         const scalar_t *data_offset_ = data_offset.data_ptr<scalar_t>();
@@ -460,8 +461,7 @@ void deformable_col2im_coord(
             ksize_h, ksize_w, pad_h, pad_w, stride_h, stride_w,
             dilation_h, dilation_w, channel_per_deformable_group,
             parallel_imgs, 2 * ksize_h * ksize_w * deformable_group, deformable_group,
-            height_col, width_col, grad_offset_);
-      }));
+            height_col, width_col, grad_offset_); }));
 }
 
 template <typename scalar_t>
@@ -502,7 +502,7 @@ __device__ scalar_t dmcn_get_gradient_weight(scalar_t argmax_h, scalar_t argmax_
 {
   if (argmax_h <= -1 || argmax_h >= height || argmax_w <= -1 || argmax_w >= width)
   {
-    //empty
+    // empty
     return 0;
   }
 
@@ -530,7 +530,7 @@ __device__ scalar_t dmcn_get_coordinate_weight(scalar_t argmax_h, scalar_t argma
 {
   if (argmax_h <= -1 || argmax_h >= height || argmax_w <= -1 || argmax_w >= width)
   {
-    //empty
+    // empty
     return 0;
   }
 
@@ -595,7 +595,7 @@ __global__ void modulated_deformable_im2col_gpu_kernel(const int n,
     const int w_in = w_col * stride_w - pad_w;
 
     scalar_t *data_col_ptr = data_col + ((c_col * batch_size + b_col) * height_col + h_col) * width_col + w_col;
-    //const float* data_im_ptr = data_im + ((b_col * num_channels + c_im) * height + h_in) * width + w_in;
+    // const float* data_im_ptr = data_im + ((b_col * num_channels + c_im) * height + h_in) * width + w_in;
     const scalar_t *data_im_ptr = data_im + (b_col * num_channels + c_im) * height * width;
     const scalar_t *data_offset_ptr = data_offset + (b_col * deformable_group + deformable_group_index) * 2 * kernel_h * kernel_w * height_col * width_col;
 
@@ -614,19 +614,19 @@ __global__ void modulated_deformable_im2col_gpu_kernel(const int n,
         scalar_t val = static_cast<scalar_t>(0);
         const scalar_t h_im = h_in + i * dilation_h + offset_h;
         const scalar_t w_im = w_in + j * dilation_w + offset_w;
-        //if (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) {
+        // if (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) {
         if (h_im > -1 && w_im > -1 && h_im < height && w_im < width)
         {
-          //const float map_h = i * dilation_h + offset_h;
-          //const float map_w = j * dilation_w + offset_w;
-          //const int cur_height = height - h_in;
-          //const int cur_width = width - w_in;
-          //val = dmcn_im2col_bilinear(data_im_ptr, width, cur_height, cur_width, map_h, map_w);
+          // const float map_h = i * dilation_h + offset_h;
+          // const float map_w = j * dilation_w + offset_w;
+          // const int cur_height = height - h_in;
+          // const int cur_width = width - w_in;
+          // val = dmcn_im2col_bilinear(data_im_ptr, width, cur_height, cur_width, map_h, map_w);
           val = dmcn_im2col_bilinear(data_im_ptr, width, height, width, h_im, w_im);
         }
         *data_col_ptr = val * mask;
         data_col_ptr += batch_size * height_col * width_col;
-        //data_col_ptr += height_col * width_col;
+        // data_col_ptr += height_col * width_col;
       }
     }
   }
@@ -779,7 +779,8 @@ void modulated_deformable_im2col_cuda(
   const int num_kernels = channels * batch_size * height_col * width_col;
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      data_im.scalar_type(), "modulated_deformable_im2col_gpu", ([&] {
+      data_im.scalar_type(), "modulated_deformable_im2col_gpu", ([&]
+                                                                 {
         const scalar_t *data_im_ = data_im.data_ptr<scalar_t>();
         const scalar_t *data_offset_ = data_offset.data_ptr<scalar_t>();
         const scalar_t *data_mask_ = data_mask.data_ptr<scalar_t>();
@@ -788,8 +789,7 @@ void modulated_deformable_im2col_cuda(
         modulated_deformable_im2col_gpu_kernel<<<GET_BLOCKS(num_kernels), CUDA_NUM_THREADS, 0, at::cuda::getCurrentCUDAStream()>>>(
             num_kernels, data_im_, data_offset_, data_mask_, height_im, width_im, kernel_h, kenerl_w,
             pad_h, pad_w, stride_h, stride_w, dilation_h, dilation_w, channel_per_deformable_group,
-            batch_size, channels, deformable_group, height_col, width_col, data_col_);
-      }));
+            batch_size, channels, deformable_group, height_col, width_col, data_col_); }));
 
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess)
@@ -811,7 +811,8 @@ void modulated_deformable_col2im_cuda(
   const int num_kernels = channels * kernel_h * kernel_w * batch_size * height_col * width_col;
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      data_col.scalar_type(), "modulated_deformable_col2im_gpu", ([&] {
+      data_col.scalar_type(), "modulated_deformable_col2im_gpu", ([&]
+                                                                  {
         const scalar_t *data_col_ = data_col.data_ptr<scalar_t>();
         const scalar_t *data_offset_ = data_offset.data_ptr<scalar_t>();
         const scalar_t *data_mask_ = data_mask.data_ptr<scalar_t>();
@@ -821,8 +822,7 @@ void modulated_deformable_col2im_cuda(
             num_kernels, data_col_, data_offset_, data_mask_, channels, height_im, width_im,
             kernel_h, kernel_w, pad_h, pad_w, stride_h, stride_w,
             dilation_h, dilation_w, channel_per_deformable_group,
-            batch_size, deformable_group, height_col, width_col, grad_im_);
-      }));
+            batch_size, deformable_group, height_col, width_col, grad_im_); }));
 
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess)
@@ -844,7 +844,8 @@ void modulated_deformable_col2im_coord_cuda(
   const int channel_per_deformable_group = channels * kernel_h * kernel_w / deformable_group;
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      data_col.scalar_type(), "modulated_deformable_col2im_coord_gpu", ([&] {
+      data_col.scalar_type(), "modulated_deformable_col2im_coord_gpu", ([&]
+                                                                        {
         const scalar_t *data_col_ = data_col.data_ptr<scalar_t>();
         const scalar_t *data_im_ = data_im.data_ptr<scalar_t>();
         const scalar_t *data_offset_ = data_offset.data_ptr<scalar_t>();
@@ -857,8 +858,7 @@ void modulated_deformable_col2im_coord_cuda(
             kernel_h, kernel_w, pad_h, pad_w, stride_h, stride_w,
             dilation_h, dilation_w, channel_per_deformable_group,
             batch_size, 2 * kernel_h * kernel_w * deformable_group, deformable_group, height_col, width_col,
-            grad_offset_, grad_mask_);
-      }));
+            grad_offset_, grad_mask_); }));
   cudaError_t err = cudaGetLastError();
   if (err != cudaSuccess)
   {

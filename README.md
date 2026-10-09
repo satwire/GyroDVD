@@ -1,13 +1,13 @@
 ## Gyro-based Deep Video Deblurring
+
 ##### [Project](http://cg.postech.ac.kr/research/GyroDVD/) | [Paper](https://cg.postech.ac.kr/researches/GyroDVD/assets/pdf/GyroDVD.pdf) | [Supple](https://cg.postech.ac.kr/researches/GyroDVD/assets/pdf/GyroDVD_supplementary_materials.zip)
 
-#### Official Implementation of CVPR 2026 Paper 
+#### Official Implementation of CVPR 2026 Paper
 
 > Gyro-based Deep Video Deblurring<br>
 > Jaesung Rim<sup>1</sup>, Woohyeok Kim<sup>1</sup>, Haeyun Lee<sup>2</sup>, Heemin Yang<sup>1</sup>, Ke Wang<sup>3</sup>, Sunghyun Cho<sup>1</sup><br>
 > <sup>1</sup>POSTECH, <sup>2</sup>KOREATECH, <sup>3</sup>Pika Labs<br>
-> *IEEE Conference on Computer Vision and Pattern Recognition (**CVPR**) 2026*<br>
-
+> _IEEE Conference on Computer Vision and Pattern Recognition (**CVPR**) 2026_<br>
 
 ## Install
 
@@ -22,7 +22,7 @@ python setup.py develop
 
 ## Download
 
-### Dataset [[Hugging Face]](https://huggingface.co/datasets/rimchang/GyroDVD/tree/main) 
+### Dataset [[Hugging Face]](https://huggingface.co/datasets/rimchang/GyroDVD/tree/main)
 
 <details>
 <summary><strong>Descriptions</strong> (click) </summary>
@@ -32,14 +32,14 @@ For the training set, noise and saturation pixels are synthesized on-the-fly in 
 For the validation and test sets, noise and saturation pixels have already been applied and are included in the released dataset.
 
 - GyroVD_Syn_train.tar.gz : 50,500 frames for training.
-  - GyroVD_Syn_train_tau.tar.gz : pre-computed tau. (only required for training.) 
-- GyroVD_Syn_val.tar.gz : 5,000 frames for validation. 
-  - GyroVD_Syn_val_tau.tar.gz : pre-computed tau for validation set. (only required for training.) 
-- GyroVD_Syn_test.tar.gz : 7,700 frames for evaluation. 
-  - GyroVD_Syn_test_tau.tar.gz : pre-computed tau for test set. (only required for training.) 
+    - GyroVD_Syn_train_tau.tar.gz : pre-computed tau. (only required for training.)
+- GyroVD_Syn_val.tar.gz : 5,000 frames for validation.
+    - GyroVD_Syn_val_tau.tar.gz : pre-computed tau for validation set. (only required for training.)
+- GyroVD_Syn_test.tar.gz : 7,700 frames for evaluation.
+    - GyroVD_Syn_test_tau.tar.gz : pre-computed tau for test set. (only required for training.)
 - GyroVD_Real.tar.gz: 10,000 real-world frames for evaluation.
-#### To facilitate future research, we also provide accelerometer and magnetometer data.
 
+#### To facilitate future research, we also provide accelerometer and magnetometer data.
 
 ### The GyroVD-Syn dataset
 
@@ -67,6 +67,7 @@ GyroVD_Syn_train
 ```
 
 ### The GyroVD-Real dataset
+
 ```bash
 # GyroVD_Real.tar.gz
 GyroVD-Real
@@ -82,12 +83,13 @@ GyroVD-Real
 │   ...
 ...
 ```
+
 </details>
 
-### Deblurred Results [[Hugging Face]](https://huggingface.co/datasets/rimchang/GyroDVD_results/tree/main) 
-
+### Deblurred Results [[Hugging Face]](https://huggingface.co/datasets/rimchang/GyroDVD_results/tree/main)
 
 ### Pre-trained models [[link]](./model_zoos/)
+
 <details>
 <summary><strong>Descriptions</strong> (click) </summary>
 
@@ -96,9 +98,10 @@ GyroVD-Real
 - GyroDVD_96.pth: Weight of GyroDVD-96.
 - GyroDVD_128.pth: Weight of GyroDVD-128.
 - raft-small.pth: Weight of RAFT_small for optical flow estimation.
-</details>
+      </details>
 
 ## Demo
+
 ```bash
 # demo of samples from GyroVD-Real and GyroVD-Syn
 python inference_GyroVDReal.py --dataset_root=demo/GyroVD_Real  --out_path=results/GyroDVD_128_Real_demo --model_size=128
@@ -132,7 +135,7 @@ python evaluation/eval_Real/inference_iqa_resize.py -t=results/GyroDVD_128_Real 
 # Compute BRISQUE and NIQE on GyroVD-Real. Tested on MATLAB R2023
 # We found that BRISQUE and NIQE in IQA-PyTorch are sometimes not robust, so we use the MATLAB implementations for evaluation.
 # ./evaluation/eval_Real
-addpath('compute_iqa_matlab'); 
+addpath('compute_iqa_matlab');
 compute_iqa_matlab('../../results/GyroDVD_128_Real', 'brisque', '../../results/GyroDVD_128_Real_brisque.txt');
 compute_iqa_matlab('../../results/GyroDVD_128_Real', 'niqe', '../../results/GyroDVD_128_Real_niqe.txt');
 
@@ -167,3 +170,4 @@ If you use our dataset and code for your research, please cite our paper.
  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
  year={2026}
 }
+```

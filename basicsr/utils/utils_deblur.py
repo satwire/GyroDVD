@@ -1,5 +1,7 @@
 import torch
-import basicsr.utils.median_pool as median_pool
+
+from basicsr.utils import median_pool
+
 
 # --------------------------------
 def get_uperleft_denominator(img, kernel, scale: float = 8.0 / 3.0 / 10.0):
@@ -11,13 +13,13 @@ def get_uperleft_denominator(img, kernel, scale: float = 8.0 / 3.0 / 10.0):
     # 구식: numerator = torch.rfft(img1, 3, onesided=False)
     numerator = torch.fft.fftn(img1, dim=(2, 3))  # full complex FFT
 
-    #print(denominator.shape, numerator.shape, nsr.shape, ker_f.shape, nsr)
+    # print(denominator.shape, numerator.shape, nsr.shape, ker_f.shape, nsr)
     deblur = deconv(denominator, numerator)
-    #print(deblur.shape)
+    # print(deblur.shape)
     return deblur
 
 
-def deconv_logfft(x, k, fftshift=False, eps = 1e-12):
+def deconv_logfft(x, k, fftshift=False, eps=1e-12):
 
     x_fft = torch.fft.fft2(x, dim=(-2, -1))
     if fftshift:
@@ -48,7 +50,9 @@ def deconv_logfft(x, k, fftshift=False, eps = 1e-12):
     return out
 
 
-def wiener_filter_para(_input_blur, eps: float = 1e-12, scale: float = 8.0 / 3.0 / 10.0):
+def wiener_filter_para(
+    _input_blur, eps: float = 1e-12, scale: float = 8.0 / 3.0 / 10.0
+):
     """
     NSR ≈ Var(noise) / Var(signal)
     - noise ≈ median_pool(x) - x
@@ -67,7 +71,9 @@ def wiener_filter_para(_input_blur, eps: float = 1e-12, scale: float = 8.0 / 3.0
     var_n = ((diff - mean_n) ** 2).sum(dim=(2, 3), keepdim=True) / max(num - 1, 1)
 
     mean_x = _input_blur.mean(dim=(2, 3), keepdim=True)
-    var_x = ((_input_blur - mean_x) ** 2).sum(dim=(2, 3), keepdim=True) / max(num - 1, 1)
+    var_x = ((_input_blur - mean_x) ** 2).sum(dim=(2, 3), keepdim=True) / max(
+        num - 1, 1
+    )
 
     # NSR: Var(noise) / Var(signal) (+ 안정화 항)
     NSR = (var_n / (var_x + eps)) * scale
@@ -81,7 +87,7 @@ def wiener_filter_para(_input_blur, eps: float = 1e-12, scale: float = 8.0 / 3.0
 # --------------------------------
 def inv_fft_kernel_est(ker_f, NSR):
     inv_denominator = ker_f.real * ker_f.real + ker_f.imag * ker_f.imag + NSR
-    inv_ker_f = (ker_f.conj() / inv_denominator)
+    inv_ker_f = ker_f.conj() / inv_denominator
     return inv_ker_f
 
 
@@ -98,10 +104,12 @@ def deconv(inv_ker_f, fft_input_blur):
 def convert_psf2otf(ker, size, rot180=False):
     psf = torch.zeros(size, device=ker.device)
     centre = ker.shape[2] // 2 + 1
-    psf[:, :, :centre, :centre] = ker[:, :, (centre - 1):, (centre - 1):]
-    psf[:, :, :centre, -(centre - 1):] = ker[:, :, (centre - 1):, :(centre - 1)]
-    psf[:, :, -(centre - 1):, :centre] = ker[:, :, :(centre - 1), (centre - 1):]
-    psf[:, :, -(centre - 1):, -(centre - 1):] = ker[:, :, :(centre - 1), :(centre - 1)]
+    psf[:, :, :centre, :centre] = ker[:, :, (centre - 1) :, (centre - 1) :]
+    psf[:, :, :centre, -(centre - 1) :] = ker[:, :, (centre - 1) :, : (centre - 1)]
+    psf[:, :, -(centre - 1) :, :centre] = ker[:, :, : (centre - 1), (centre - 1) :]
+    psf[:, :, -(centre - 1) :, -(centre - 1) :] = ker[
+        :, :, : (centre - 1), : (centre - 1)
+    ]
 
     if rot180:
         psf = torch.rot90(psf, k=2, dims=[-2, -1])
@@ -146,10 +154,10 @@ def trajectories2kernel(blur_kernels, ker_size, bins=129):
 
     # 2D 인덱스를 1D 선형 인덱스로 변환해서 scatter_add_
     # shape: (T, H, W) -> (-1,)
-    lin_left_bottom = (current_y_bottom * ker_size + current_x_left)
-    lin_right_bottom = (current_y_bottom * ker_size + current_x_right)
-    lin_left_upper = (current_y_upper * ker_size + current_x_left)
-    lin_right_upper = (current_y_upper * ker_size + current_x_right)
+    lin_left_bottom = current_y_bottom * ker_size + current_x_left
+    lin_right_bottom = current_y_bottom * ker_size + current_x_right
+    lin_left_upper = current_y_upper * ker_size + current_x_left
+    lin_right_upper = current_y_upper * ker_size + current_x_right
 
     vals_left_bottom = weight_left_bottom  # .view(-1)
     vals_right_bottom = weight_right_bottom  # .view(-1)

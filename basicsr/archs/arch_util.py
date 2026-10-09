@@ -1,10 +1,11 @@
 import collections.abc
 import math
-import torch
-import torchvision
 import warnings
 from distutils.version import LooseVersion
 from itertools import repeat
+
+import torch
+import torchvision
 from torch import nn as nn
 from torch.nn import functional as F
 from torch.nn import init as init
@@ -29,12 +30,7 @@ def default_init_weights(module_list, scale=1, bias_fill=0, **kwargs):
         module_list = [module_list]
     for module in module_list:
         for m in module.modules():
-            if isinstance(m, nn.Conv2d):
-                init.kaiming_normal_(m.weight, **kwargs)
-                m.weight.data *= scale
-                if m.bias is not None:
-                    m.bias.data.fill_(bias_fill)
-            elif isinstance(m, nn.Linear):
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
                 init.kaiming_normal_(m.weight, **kwargs)
                 m.weight.data *= scale
                 if m.bias is not None:
@@ -77,7 +73,7 @@ class ResidualBlockNoBN(nn.Module):
     """
 
     def __init__(self, num_feat=64, res_scale=1, pytorch_init=False):
-        super(ResidualBlockNoBN, self).__init__()
+        super().__init__()
         self.res_scale = res_scale
         self.conv1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True)
         self.conv2 = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True)
@@ -110,11 +106,15 @@ class Upsample(nn.Sequential):
             m.append(nn.Conv2d(num_feat, 9 * num_feat, 3, 1, 1))
             m.append(nn.PixelShuffle(3))
         else:
-            raise ValueError(f'scale {scale} is not supported. Supported scales: 2^n and 3.')
-        super(Upsample, self).__init__(*m)
+            raise ValueError(
+                f"scale {scale} is not supported. Supported scales: 2^n and 3."
+            )
+        super().__init__(*m)
 
 
-def flow_warp(x, flow, interp_mode='bilinear', padding_mode='zeros', align_corners=True):
+def flow_warp(
+    x, flow, interp_mode="bilinear", padding_mode="zeros", align_corners=True
+):
     """Warp an image or feature map with optical flow.
 
     Args:
@@ -133,7 +133,9 @@ def flow_warp(x, flow, interp_mode='bilinear', padding_mode='zeros', align_corne
     assert x.size()[-2:] == flow.size()[1:3]
     _, _, h, w = x.size()
     # create mesh grid
-    grid_y, grid_x = torch.meshgrid(torch.arange(0, h).type_as(x), torch.arange(0, w).type_as(x))
+    grid_y, grid_x = torch.meshgrid(
+        torch.arange(0, h).type_as(x), torch.arange(0, w).type_as(x)
+    )
     grid = torch.stack((grid_x, grid_y), 2).type_as(x)  # W(x), H(y), 2
     grid.requires_grad = False
 
@@ -142,13 +144,19 @@ def flow_warp(x, flow, interp_mode='bilinear', padding_mode='zeros', align_corne
     vgrid_x = 2.0 * vgrid[:, :, :, 0] / max(w - 1, 1) - 1.0
     vgrid_y = 2.0 * vgrid[:, :, :, 1] / max(h - 1, 1) - 1.0
     vgrid_scaled = torch.stack((vgrid_x, vgrid_y), dim=3)
-    output = F.grid_sample(x, vgrid_scaled, mode=interp_mode, padding_mode=padding_mode, align_corners=align_corners).type_as(x)
-    
+    output = F.grid_sample(
+        x,
+        vgrid_scaled,
+        mode=interp_mode,
+        padding_mode=padding_mode,
+        align_corners=align_corners,
+    ).type_as(x)
+
     # TODO, what if align_corners=False
     return output
 
 
-def resize_flow(flow, size_type, sizes, interp_mode='bilinear', align_corners=False):
+def resize_flow(flow, size_type, sizes, interp_mode="bilinear", align_corners=False):
     """Resize a flow according to ratio or shape.
 
     Args:
@@ -169,12 +177,14 @@ def resize_flow(flow, size_type, sizes, interp_mode='bilinear', align_corners=Fa
         Tensor: Resized flow.
     """
     _, _, flow_h, flow_w = flow.size()
-    if size_type == 'ratio':
+    if size_type == "ratio":
         output_h, output_w = int(flow_h * sizes[0]), int(flow_w * sizes[1])
-    elif size_type == 'shape':
+    elif size_type == "shape":
         output_h, output_w = sizes[0], sizes[1]
     else:
-        raise ValueError(f'Size type should be ratio or shape, but got type {size_type}.')
+        raise ValueError(
+            f"Size type should be ratio or shape, but got type {size_type}."
+        )
 
     input_flow = flow.clone()
     ratio_h = output_h / flow_h
@@ -182,13 +192,17 @@ def resize_flow(flow, size_type, sizes, interp_mode='bilinear', align_corners=Fa
     input_flow[:, 0, :, :] *= ratio_w
     input_flow[:, 1, :, :] *= ratio_h
     resized_flow = F.interpolate(
-        input=input_flow, size=(output_h, output_w), mode=interp_mode, align_corners=align_corners)
+        input=input_flow,
+        size=(output_h, output_w),
+        mode=interp_mode,
+        align_corners=align_corners,
+    )
     return resized_flow
 
 
 # TODO: may write a cpp file
 def pixel_unshuffle(x, scale):
-    """ Pixel unshuffle.
+    """Pixel unshuffle.
 
     Args:
         x (Tensor): Input feature with shape (b, c, hh, hw).
@@ -226,14 +240,32 @@ class DCNv2Pack(ModulatedDeformConvPack):
         offset_absmean = torch.mean(torch.abs(offset))
         if offset_absmean > 50:
             logger = get_root_logger()
-            logger.warning(f'Offset abs mean is {offset_absmean}, larger than 50.')
+            logger.warning(f"Offset abs mean is {offset_absmean}, larger than 50.")
 
-        if LooseVersion(torchvision.__version__) >= LooseVersion('0.9.0'):
-            return torchvision.ops.deform_conv2d(x, offset, self.weight, self.bias, self.stride, self.padding,
-                                                 self.dilation, mask)
+        if LooseVersion(torchvision.__version__) >= LooseVersion("0.9.0"):
+            return torchvision.ops.deform_conv2d(
+                x,
+                offset,
+                self.weight,
+                self.bias,
+                self.stride,
+                self.padding,
+                self.dilation,
+                mask,
+            )
         else:
-            return modulated_deform_conv(x, offset, mask, self.weight, self.bias, self.stride, self.padding,
-                                         self.dilation, self.groups, self.deformable_groups)
+            return modulated_deform_conv(
+                x,
+                offset,
+                mask,
+                self.weight,
+                self.bias,
+                self.stride,
+                self.padding,
+                self.dilation,
+                self.groups,
+                self.deformable_groups,
+            )
 
 
 def _no_grad_trunc_normal_(tensor, mean, std, a, b):
@@ -242,13 +274,14 @@ def _no_grad_trunc_normal_(tensor, mean, std, a, b):
     # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
     def norm_cdf(x):
         # Computes standard normal cumulative distribution function
-        return (1. + math.erf(x / math.sqrt(2.))) / 2.
+        return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
 
     if (mean < a - 2 * std) or (mean > b + 2 * std):
         warnings.warn(
-            'mean is more than 2 std from [a, b] in nn.init.trunc_normal_. '
-            'The distribution of values may be incorrect.',
-            stacklevel=2)
+            "mean is more than 2 std from [a, b] in nn.init.trunc_normal_. "
+            "The distribution of values may be incorrect.",
+            stacklevel=2,
+        )
 
     with torch.no_grad():
         # Values are generated by using a truncated uniform distribution and
@@ -266,7 +299,7 @@ def _no_grad_trunc_normal_(tensor, mean, std, a, b):
         tensor.erfinv_()
 
         # Transform to proper mean, std
-        tensor.mul_(std * math.sqrt(2.))
+        tensor.mul_(std * math.sqrt(2.0))
         tensor.add_(mean)
 
         # Clamp to ensure it's in the proper range
@@ -274,7 +307,7 @@ def _no_grad_trunc_normal_(tensor, mean, std, a, b):
         return tensor
 
 
-def trunc_normal_(tensor, mean=0., std=1., a=-2., b=2.):
+def trunc_normal_(tensor, mean=0.0, std=1.0, a=-2.0, b=2.0):
     r"""Fills the input Tensor with values drawn from a truncated
     normal distribution.
 
@@ -319,7 +352,6 @@ to_ntuple = _ntuple
 
 
 class LayerNormFunction(torch.autograd.Function):
-
     @staticmethod
     def forward(ctx, x, weight, bias, eps):
         ctx.eps = eps
@@ -341,16 +373,20 @@ class LayerNormFunction(torch.autograd.Function):
         mean_g = g.mean(dim=1, keepdim=True)
 
         mean_gy = (g * y).mean(dim=1, keepdim=True)
-        gx = 1. / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
-        return gx, (grad_output * y).sum(dim=3).sum(dim=2).sum(dim=0), grad_output.sum(dim=3).sum(dim=2).sum(
-            dim=0), None
+        gx = 1.0 / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
+        return (
+            gx,
+            (grad_output * y).sum(dim=3).sum(dim=2).sum(dim=0),
+            grad_output.sum(dim=3).sum(dim=2).sum(dim=0),
+            None,
+        )
+
 
 class LayerNorm2d(nn.Module):
-
     def __init__(self, channels, eps=1e-6):
-        super(LayerNorm2d, self).__init__()
-        self.register_parameter('weight', nn.Parameter(torch.ones(channels)))
-        self.register_parameter('bias', nn.Parameter(torch.zeros(channels)))
+        super().__init__()
+        self.register_parameter("weight", nn.Parameter(torch.ones(channels)))
+        self.register_parameter("bias", nn.Parameter(torch.zeros(channels)))
         self.eps = eps
 
     def forward(self, x):
@@ -358,7 +394,14 @@ class LayerNorm2d(nn.Module):
 
 
 class AvgPool2d(nn.Module):
-    def __init__(self, kernel_size=None, base_size=None, auto_pad=True, fast_imp=False, train_size=None):
+    def __init__(
+        self,
+        kernel_size=None,
+        base_size=None,
+        auto_pad=True,
+        fast_imp=False,
+        train_size=None,
+    ):
         super().__init__()
         self.kernel_size = kernel_size
         self.base_size = base_size
@@ -372,9 +415,7 @@ class AvgPool2d(nn.Module):
         self.train_size = train_size
 
     def extra_repr(self) -> str:
-        return 'kernel_size={}, base_size={}, stride={}, fast_imp={}'.format(
-            self.kernel_size, self.base_size, self.kernel_size, self.fast_imp
-        )
+        return f"kernel_size={self.kernel_size}, base_size={self.base_size}, stride={self.kernel_size}, fast_imp={self.fast_imp}"
 
     def forward(self, x):
         if self.kernel_size is None and self.base_size:
@@ -404,15 +445,28 @@ class AvgPool2d(nn.Module):
                 r2 = min(self.max_r2, r2)
                 s = x[:, :, ::r1, ::r2].cumsum(dim=-1).cumsum(dim=-2)
                 n, c, h, w = s.shape
-                k1, k2 = min(h - 1, self.kernel_size[0] // r1), min(w - 1, self.kernel_size[1] // r2)
-                out = (s[:, :, :-k1, :-k2] - s[:, :, :-k1, k2:] - s[:, :, k1:, :-k2] + s[:, :, k1:, k2:]) / (k1 * k2)
+                k1, k2 = (
+                    min(h - 1, self.kernel_size[0] // r1),
+                    min(w - 1, self.kernel_size[1] // r2),
+                )
+                out = (
+                    s[:, :, :-k1, :-k2]
+                    - s[:, :, :-k1, k2:]
+                    - s[:, :, k1:, :-k2]
+                    + s[:, :, k1:, k2:]
+                ) / (k1 * k2)
                 out = torch.nn.functional.interpolate(out, scale_factor=(r1, r2))
         else:
             n, c, h, w = x.shape
             s = x.cumsum(dim=-1).cumsum_(dim=-2)
             s = torch.nn.functional.pad(s, (1, 0, 1, 0))  # pad 0 for convenience
             k1, k2 = min(h, self.kernel_size[0]), min(w, self.kernel_size[1])
-            s1, s2, s3, s4 = s[:, :, :-k1, :-k2], s[:, :, :-k1, k2:], s[:, :, k1:, :-k2], s[:, :, k1:, k2:]
+            s1, s2, s3, s4 = (
+                s[:, :, :-k1, :-k2],
+                s[:, :, :-k1, k2:],
+                s[:, :, k1:, :-k2],
+                s[:, :, k1:, k2:],
+            )
             out = s4 + s1 - s2 - s3
             out = out / (k1 * k2)
 
@@ -421,9 +475,10 @@ class AvgPool2d(nn.Module):
             _h, _w = out.shape[2:]
             # print(x.shape, self.kernel_size)
             pad2d = ((w - _w) // 2, (w - _w + 1) // 2, (h - _h) // 2, (h - _h + 1) // 2)
-            out = torch.nn.functional.pad(out, pad2d, mode='replicate')
+            out = torch.nn.functional.pad(out, pad2d, mode="replicate")
 
         return out
+
 
 def replace_layers(model, base_size, train_size, fast_imp, **kwargs):
     for n, m in model.named_children():
@@ -432,12 +487,14 @@ def replace_layers(model, base_size, train_size, fast_imp, **kwargs):
             replace_layers(m, base_size, train_size, fast_imp, **kwargs)
 
         if isinstance(m, nn.AdaptiveAvgPool2d):
-            pool = AvgPool2d(base_size=base_size, fast_imp=fast_imp, train_size=train_size)
+            pool = AvgPool2d(
+                base_size=base_size, fast_imp=fast_imp, train_size=train_size
+            )
             assert m.output_size == 1
             setattr(model, n, pool)
 
 
-'''
+"""
 ref. 
 @article{chu2021tlsc,
   title={Revisiting Global Statistics Aggregation for Improving Image Restoration},
@@ -445,8 +502,10 @@ ref.
   journal={arXiv preprint arXiv:2112.04491},
   year={2021}
 }
-'''
-class Local_Base():
+"""
+
+
+class Local_Base:
     def convert(self, *args, train_size, **kwargs):
         replace_layers(self, *args, train_size=train_size, **kwargs)
         imgs = torch.rand(train_size)

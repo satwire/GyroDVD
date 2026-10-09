@@ -1,11 +1,27 @@
 from copy import deepcopy
 
 from basicsr.utils.registry import METRIC_REGISTRY
+
 from .niqe import calculate_niqe
-from .psnr_ssim import calculate_psnr, calculate_ssim,calculate_psnr_pt,calculate_ssim_pt,calculate_ssim_mat,ssim_calculate
+from .psnr_ssim import (
+    calculate_psnr,
+    calculate_psnr_pt,
+    calculate_ssim,
+    calculate_ssim_mat,
+    calculate_ssim_pt,
+    ssim_calculate,
+)
 from .warploss import WarpLoss
 
-__all__ = ['calculate_psnr', 'calculate_ssim', 'calculate_niqe',"calculate_psnr_pt","calculate_ssim_pt","WarpLoss","ssim_calculate"]
+__all__ = [
+    "WarpLoss",
+    "calculate_niqe",
+    "calculate_psnr",
+    "calculate_psnr_pt",
+    "calculate_ssim",
+    "calculate_ssim_pt",
+    "ssim_calculate",
+]
 
 
 def calculate_metric(data, opt):
@@ -16,6 +32,6 @@ def calculate_metric(data, opt):
             type (str): Model type.
     """
     opt = deepcopy(opt)
-    metric_type = opt.pop('type')
+    metric_type = opt.pop("type")
     metric = METRIC_REGISTRY.get(metric_type)(**data, **opt)
     return metric

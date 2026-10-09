@@ -15,17 +15,20 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-static __host__ __device__ __forceinline__ int floor_div(int a, int b) {
+static __host__ __device__ __forceinline__ int floor_div(int a, int b)
+{
   int c = a / b;
 
-  if (c * b > a) {
+  if (c * b > a)
+  {
     c--;
   }
 
   return c;
 }
 
-struct UpFirDn2DKernelParams {
+struct UpFirDn2DKernelParams
+{
   int up_x;
   int up_y;
   int down_x;
@@ -50,7 +53,8 @@ struct UpFirDn2DKernelParams {
 template <typename scalar_t>
 __global__ void upfirdn2d_kernel_large(scalar_t *out, const scalar_t *input,
                                        const scalar_t *kernel,
-                                       const UpFirDn2DKernelParams p) {
+                                       const UpFirDn2DKernelParams p)
+{
   int minor_idx = blockIdx.x * blockDim.x + threadIdx.x;
   int out_y = minor_idx / p.minor_dim;
   minor_idx -= out_y * p.minor_dim;
@@ -58,7 +62,8 @@ __global__ void upfirdn2d_kernel_large(scalar_t *out, const scalar_t *input,
   int major_idx_base = blockIdx.z * p.loop_major;
 
   if (out_x_base >= p.out_w || out_y >= p.out_h ||
-      major_idx_base >= p.major_dim) {
+      major_idx_base >= p.major_dim)
+  {
     return;
   }
 
@@ -69,9 +74,11 @@ __global__ void upfirdn2d_kernel_large(scalar_t *out, const scalar_t *input,
 
   for (int loop_major = 0, major_idx = major_idx_base;
        loop_major < p.loop_major && major_idx < p.major_dim;
-       loop_major++, major_idx++) {
+       loop_major++, major_idx++)
+  {
     for (int loop_x = 0, out_x = out_x_base;
-         loop_x < p.loop_x && out_x < p.out_w; loop_x++, out_x += blockDim.y) {
+         loop_x < p.loop_x && out_x < p.out_w; loop_x++, out_x += blockDim.y)
+    {
       int mid_x = out_x * p.down_x + p.up_x - 1 - p.pad_x0;
       int in_x = min(max(floor_div(mid_x, p.up_x), 0), p.in_w);
       int w = min(max(floor_div(mid_x + p.kernel_w, p.up_x), 0), p.in_w) - in_x;
@@ -88,8 +95,10 @@ __global__ void upfirdn2d_kernel_large(scalar_t *out, const scalar_t *input,
 
       scalar_t v = 0.0f;
 
-      for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
+      for (int y = 0; y < h; y++)
+      {
+        for (int x = 0; x < w; x++)
+        {
           v += static_cast<scalar_t>(*x_p) * static_cast<scalar_t>(*k_p);
           x_p += x_px;
           k_p += k_px;
@@ -109,7 +118,8 @@ template <typename scalar_t, int up_x, int up_y, int down_x, int down_y,
           int kernel_h, int kernel_w, int tile_out_h, int tile_out_w>
 __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
                                  const scalar_t *kernel,
-                                 const UpFirDn2DKernelParams p) {
+                                 const UpFirDn2DKernelParams p)
+{
   const int tile_in_h = ((tile_out_h - 1) * down_y + kernel_h - 1) / up_y + 1;
   const int tile_in_w = ((tile_out_w - 1) * down_x + kernel_w - 1) / up_x + 1;
 
@@ -124,17 +134,20 @@ __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
   int major_idx_base = blockIdx.z * p.loop_major;
 
   if (tile_out_x_base >= p.out_w | tile_out_y >= p.out_h |
-      major_idx_base >= p.major_dim) {
+      major_idx_base >= p.major_dim)
+  {
     return;
   }
 
   for (int tap_idx = threadIdx.x; tap_idx < kernel_h * kernel_w;
-       tap_idx += blockDim.x) {
+       tap_idx += blockDim.x)
+  {
     int ky = tap_idx / kernel_w;
     int kx = tap_idx - ky * kernel_w;
     scalar_t v = 0.0;
 
-    if (kx < p.kernel_w & ky < p.kernel_h) {
+    if (kx < p.kernel_w & ky < p.kernel_h)
+    {
       v = kernel[(p.kernel_h - 1 - ky) * p.kernel_w + (p.kernel_w - 1 - kx)];
     }
 
@@ -143,10 +156,12 @@ __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
 
   for (int loop_major = 0, major_idx = major_idx_base;
        loop_major < p.loop_major & major_idx < p.major_dim;
-       loop_major++, major_idx++) {
+       loop_major++, major_idx++)
+  {
     for (int loop_x = 0, tile_out_x = tile_out_x_base;
          loop_x < p.loop_x & tile_out_x < p.out_w;
-         loop_x++, tile_out_x += tile_out_w) {
+         loop_x++, tile_out_x += tile_out_w)
+    {
       int tile_mid_x = tile_out_x * down_x + up_x - 1 - p.pad_x0;
       int tile_mid_y = tile_out_y * down_y + up_y - 1 - p.pad_y0;
       int tile_in_x = floor_div(tile_mid_x, up_x);
@@ -155,7 +170,8 @@ __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
       __syncthreads();
 
       for (int in_idx = threadIdx.x; in_idx < tile_in_h * tile_in_w;
-           in_idx += blockDim.x) {
+           in_idx += blockDim.x)
+      {
         int rel_in_y = in_idx / tile_in_w;
         int rel_in_x = in_idx - rel_in_y * tile_in_w;
         int in_x = rel_in_x + tile_in_x;
@@ -163,7 +179,8 @@ __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
 
         scalar_t v = 0.0;
 
-        if (in_x >= 0 & in_y >= 0 & in_x < p.in_w & in_y < p.in_h) {
+        if (in_x >= 0 & in_y >= 0 & in_x < p.in_w & in_y < p.in_h)
+        {
           v = input[((major_idx * p.in_h + in_y) * p.in_w + in_x) *
                         p.minor_dim +
                     minor_idx];
@@ -174,7 +191,8 @@ __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
 
       __syncthreads();
       for (int out_idx = threadIdx.x; out_idx < tile_out_h * tile_out_w;
-           out_idx += blockDim.x) {
+           out_idx += blockDim.x)
+      {
         int rel_out_y = out_idx / tile_out_w;
         int rel_out_x = out_idx - rel_out_y * tile_out_w;
         int out_x = rel_out_x + tile_out_x;
@@ -198,7 +216,8 @@ __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
             v += sx[rel_in_y + y][rel_in_x + x] *
                  sk[kernel_y + y * up_y][kernel_x + x * up_x];
 
-        if (out_x < p.out_w & out_y < p.out_h) {
+        if (out_x < p.out_w & out_y < p.out_h)
+        {
           out[((major_idx * p.out_h + out_y) * p.out_w + out_x) * p.minor_dim +
               minor_idx] = v;
         }
@@ -210,7 +229,8 @@ __global__ void upfirdn2d_kernel(scalar_t *out, const scalar_t *input,
 torch::Tensor upfirdn2d_op(const torch::Tensor &input,
                            const torch::Tensor &kernel, int up_x, int up_y,
                            int down_x, int down_y, int pad_x0, int pad_x1,
-                           int pad_y0, int pad_y1) {
+                           int pad_y0, int pad_y1)
+{
   int curDevice = -1;
   cudaGetDevice(&curDevice);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream(curDevice);
@@ -249,42 +269,48 @@ torch::Tensor upfirdn2d_op(const torch::Tensor &input,
   int tile_out_w = -1;
 
   if (p.up_x == 1 && p.up_y == 1 && p.down_x == 1 && p.down_y == 1 &&
-      p.kernel_h <= 4 && p.kernel_w <= 4) {
+      p.kernel_h <= 4 && p.kernel_w <= 4)
+  {
     mode = 1;
     tile_out_h = 16;
     tile_out_w = 64;
   }
 
   if (p.up_x == 1 && p.up_y == 1 && p.down_x == 1 && p.down_y == 1 &&
-      p.kernel_h <= 3 && p.kernel_w <= 3) {
+      p.kernel_h <= 3 && p.kernel_w <= 3)
+  {
     mode = 2;
     tile_out_h = 16;
     tile_out_w = 64;
   }
 
   if (p.up_x == 2 && p.up_y == 2 && p.down_x == 1 && p.down_y == 1 &&
-      p.kernel_h <= 4 && p.kernel_w <= 4) {
+      p.kernel_h <= 4 && p.kernel_w <= 4)
+  {
     mode = 3;
     tile_out_h = 16;
     tile_out_w = 64;
   }
 
   if (p.up_x == 2 && p.up_y == 2 && p.down_x == 1 && p.down_y == 1 &&
-      p.kernel_h <= 2 && p.kernel_w <= 2) {
+      p.kernel_h <= 2 && p.kernel_w <= 2)
+  {
     mode = 4;
     tile_out_h = 16;
     tile_out_w = 64;
   }
 
   if (p.up_x == 1 && p.up_y == 1 && p.down_x == 2 && p.down_y == 2 &&
-      p.kernel_h <= 4 && p.kernel_w <= 4) {
+      p.kernel_h <= 4 && p.kernel_w <= 4)
+  {
     mode = 5;
     tile_out_h = 8;
     tile_out_w = 32;
   }
 
   if (p.up_x == 1 && p.up_y == 1 && p.down_x == 2 && p.down_y == 2 &&
-      p.kernel_h <= 2 && p.kernel_w <= 2) {
+      p.kernel_h <= 2 && p.kernel_w <= 2)
+  {
     mode = 6;
     tile_out_h = 8;
     tile_out_w = 32;
@@ -293,14 +319,17 @@ torch::Tensor upfirdn2d_op(const torch::Tensor &input,
   dim3 block_size;
   dim3 grid_size;
 
-  if (tile_out_h > 0 && tile_out_w > 0) {
+  if (tile_out_h > 0 && tile_out_w > 0)
+  {
     p.loop_major = (p.major_dim - 1) / 16384 + 1;
     p.loop_x = 1;
     block_size = dim3(32 * 8, 1, 1);
     grid_size = dim3(((p.out_h - 1) / tile_out_h + 1) * p.minor_dim,
                      (p.out_w - 1) / (p.loop_x * tile_out_w) + 1,
                      (p.major_dim - 1) / p.loop_major + 1);
-  } else {
+  }
+  else
+  {
     p.loop_major = (p.major_dim - 1) / 16384 + 1;
     p.loop_x = 4;
     block_size = dim3(4, 32, 1);
@@ -309,7 +338,8 @@ torch::Tensor upfirdn2d_op(const torch::Tensor &input,
                      (p.major_dim - 1) / p.loop_major + 1);
   }
 
-  AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.scalar_type(), "upfirdn2d_cuda", [&] {
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.scalar_type(), "upfirdn2d_cuda", [&]
+                                      {
     switch (mode) {
     case 1:
       upfirdn2d_kernel<scalar_t, 1, 1, 1, 1, 4, 4, 16, 64>
@@ -363,8 +393,7 @@ torch::Tensor upfirdn2d_op(const torch::Tensor &input,
       upfirdn2d_kernel_large<scalar_t><<<grid_size, block_size, 0, stream>>>(
           out.data_ptr<scalar_t>(), x.data_ptr<scalar_t>(),
           k.data_ptr<scalar_t>(), p);
-    }
-  });
+    } });
 
   return out;
 }

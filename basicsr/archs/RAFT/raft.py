@@ -1,13 +1,12 @@
-import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
-from basicsr.archs.RAFT.update import BasicUpdateBlock, SmallUpdateBlock
+from basicsr.archs.RAFT.corr import AlternateCorrBlock, CorrBlock
 from basicsr.archs.RAFT.extractor import BasicEncoder, SmallEncoder
-from basicsr.archs.RAFT.corr import CorrBlock, AlternateCorrBlock
-from basicsr.archs.RAFT.utils.utils import bilinear_sampler, coords_grid, upflow8
-from copy import deepcopy
+from basicsr.archs.RAFT.update import BasicUpdateBlock, SmallUpdateBlock
+from basicsr.archs.RAFT.utils.utils import coords_grid, upflow8
+
 try:
     autocast = torch.cuda.amp.autocast
 except:
@@ -15,19 +14,25 @@ except:
     class autocast:
         def __init__(self, enabled):
             pass
+
         def __enter__(self):
             pass
+
         def __exit__(self, *args):
             pass
+
+
 import argparse
+
+
 class RAFT(nn.Module):
     def __init__(self):
-        super(RAFT, self).__init__()
-        
+        super().__init__()
+
         args = argparse.ArgumentParser()
 
         self.args = args
-        
+
         # self.args = argparse.ArgumentParser()
         self.args.small = False
         args = self.args
@@ -36,7 +41,7 @@ class RAFT(nn.Module):
             self.context_dim = cdim = 64
             args.corr_levels = 4
             args.corr_radius = 3
-        
+
         else:
             self.hidden_dim = hdim = 128
             self.context_dim = cdim = 128
@@ -51,110 +56,112 @@ class RAFT(nn.Module):
 
         # feature network, context network, and update block
         if args.small:
-            self.fnet = SmallEncoder(output_dim=128, norm_fn='instance', dropout=args.dropout)        
-            self.cnet = SmallEncoder(output_dim=hdim+cdim, norm_fn='none', dropout=args.dropout)
+            self.fnet = SmallEncoder(
+                output_dim=128, norm_fn="instance", dropout=args.dropout
+            )
+            self.cnet = SmallEncoder(
+                output_dim=hdim + cdim, norm_fn="none", dropout=args.dropout
+            )
             self.update_block = SmallUpdateBlock(self.args, hidden_dim=hdim)
 
         else:
-            self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)        
-            self.cnet = BasicEncoder(output_dim=hdim+cdim, norm_fn='batch', dropout=args.dropout)
+            self.fnet = BasicEncoder(
+                output_dim=256, norm_fn="instance", dropout=args.dropout
+            )
+            self.cnet = BasicEncoder(
+                output_dim=hdim + cdim, norm_fn="batch", dropout=args.dropout
+            )
             self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
 
-        checkpoints = torch.load("model_zoos/raft-things.pth", map_location=lambda storage, loc: storage)
+        checkpoints = torch.load(
+            "model_zoos/raft-things.pth", map_location=lambda storage, loc: storage
+        )
         # 去除state_dict中模块名的前缀
         new_state_dict = {}
         for key, value in checkpoints.items():
-            if key.startswith('module.'):
+            if key.startswith("module."):
                 new_state_dict[key[7:]] = value
             else:
                 new_state_dict[key] = value
         # state_dict = self.state_dict()
-        self.load_state_dict(new_state_dict,strict=True)
+        self.load_state_dict(new_state_dict, strict=True)
         self.args.mixed_precision = True
-        self.position = 'center'
+        self.position = "center"
         self.exponent = 3
         self.freeze_bn()
+
     def freeze_bn(self):
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
                 # print("freeze bn",m)
-                
-        
-    
 
     def initialize_flow(self, img):
-        """ Flow is represented as difference between two coordinate grids flow = coords1 - coords0"""
+        """Flow is represented as difference between two coordinate grids flow = coords1 - coords0"""
         N, C, H, W = img.shape
-        coords0 = coords_grid(N, H//8, W//8, device=img.device)
-        coords1 = coords_grid(N, H//8, W//8, device=img.device)
+        coords0 = coords_grid(N, H // 8, W // 8, device=img.device)
+        coords1 = coords_grid(N, H // 8, W // 8, device=img.device)
 
         # optical flow computed as difference: flow = coords1 - coords0
         return coords0, coords1
 
     def upsample_flow(self, flow, mask):
-        """ Upsample flow field [H/8, W/8, 2] -> [H, W, 2] using convex combination """
+        """Upsample flow field [H/8, W/8, 2] -> [H, W, 2] using convex combination"""
         N, _, H, W = flow.shape
         mask = mask.view(N, 1, 9, 8, 8, H, W)
         mask = torch.softmax(mask, dim=2)
 
-        up_flow = F.unfold(8 * flow, [3,3], padding=1)
+        up_flow = F.unfold(8 * flow, [3, 3], padding=1)
         up_flow = up_flow.view(N, 2, 9, 1, 1, H, W)
 
         up_flow = torch.sum(mask * up_flow, dim=2)
         up_flow = up_flow.permute(0, 1, 4, 2, 5, 3)
-        return up_flow.reshape(N, 2, 8*H, 8*W)
+        return up_flow.reshape(N, 2, 8 * H, 8 * W)
 
     def pad(self, imgs):
 
         times = int(2**self.exponent)
-        H, W = imgs[0].shape[2],imgs[0].shape[3]
+        H, W = imgs[0].shape[2], imgs[0].shape[3]
         pad_h = (((H // times) + 1) * times - H) % times
         pad_w = (((W // times) + 1) * times - W) % times
-        if self.position == 'center':
+        if self.position == "center":
             """ self._pad = [[pad_h // 2, pad_h - pad_h // 2],
                          [pad_w // 2, pad_w - pad_w // 2]] """
             # self._pad = [pad_h // 2,pad_h - pad_h // 2,pad_w // 2,pad_w - pad_w // 2]
-            self._pad = [pad_w // 2,pad_w - pad_w // 2,pad_h // 2,pad_h - pad_h // 2]
-        elif self.position == 'left':
+            self._pad = [pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2]
+        elif self.position == "left":
             self._pad = [[pad_h // 2, pad_h - pad_h // 2], [0, pad_w]]
-        elif self.position == 'right':
+        elif self.position == "right":
             self._pad = [[pad_h // 2, pad_h - pad_h // 2], [pad_w, 0]]
-        elif self.position == 'top':
+        elif self.position == "top":
             self._pad = [[0, pad_h, pad_w // 2], [pad_w - pad_w // 2]]
-        elif self.position == 'down':
+        elif self.position == "down":
             self._pad = [[pad_h, 0], [pad_w // 2, pad_w - pad_w // 2]]
         """ if len(imgs[0].shape) > 2:
             self._pad.append([0, 0]) """
-        
-        imgs = [
-            F.pad(img, self._pad, mode="replicate")
-            for img in imgs
-        ]
-        
+
+        imgs = [F.pad(img, self._pad, mode="replicate") for img in imgs]
+
         return imgs
-    def forward(self, image1, image2, iters=20, flow_init=None, upsample=True, test_mode=True):
-        """ Estimate optical flow between pair of frames """
+
+    def forward(
+        self, image1, image2, iters=20, flow_init=None, upsample=True, test_mode=True
+    ):
+        """Estimate optical flow between pair of frames"""
         # image1,image2:b*(t-1),c,h,w
-        image1 = 2 * (image1 / 1.) - 1.0
-        image2 = 2 * (image2 / 1.) - 1.0
-        
+        image1 = 2 * (image1 / 1.0) - 1.0
+        image2 = 2 * (image2 / 1.0) - 1.0
 
         image1 = image1.contiguous()
         image2 = image2.contiguous()
-        
-
-            
-            
-        
 
         hdim = self.hidden_dim
         cdim = self.context_dim
 
         # run the feature network
         # with autocast(enabled=self.args.mixed_precision):
-        fmap1, fmap2 = self.fnet([image1, image2])        
-        
+        fmap1, fmap2 = self.fnet([image1, image2])
+
         fmap1 = fmap1
         fmap2 = fmap2
         if self.args.alternate_corr:
@@ -177,7 +184,7 @@ class RAFT(nn.Module):
         flow_predictions = []
         for itr in range(iters):
             coords1 = coords1.detach()
-            corr = corr_fn(coords1) # index correlation volume
+            corr = corr_fn(coords1)  # index correlation volume
 
             flow = coords1 - coords0
             # with autocast(enabled=self.args.mixed_precision):
@@ -191,7 +198,7 @@ class RAFT(nn.Module):
                 flow_up = upflow8(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
-            
+
             flow_predictions.append(flow_up)
 
         if test_mode == True:

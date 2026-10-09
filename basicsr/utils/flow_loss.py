@@ -1,18 +1,22 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.models as models
 import numpy as np
+import torch
+import torch.nn.functional as F
+from torch import nn
+from torchvision import models
+
 # from .fbConsistencyCheck import image_warp
 # from basicsr.archs.arch_util import flow_warp
+
 
 def TernaryLoss(im, im_warp, max_distance=1):
     patch_size = 2 * max_distance + 1
 
     def _rgb_to_grayscale(image):
-        grayscale = image[:, 0, :, :] * 0.2989 + \
-                    image[:, 1, :, :] * 0.5870 + \
-                    image[:, 2, :, :] * 0.1140
+        grayscale = (
+            image[:, 0, :, :] * 0.2989
+            + image[:, 1, :, :] * 0.5870
+            + image[:, 2, :, :] * 0.1140
+        )
         return grayscale.unsqueeze(1)
 
     def _ternary_transform(image):
@@ -45,32 +49,43 @@ def TernaryLoss(im, im_warp, max_distance=1):
     return dist * mask
 
 
-
-
 def image_warp(image, flow):
-    '''
+    """
     image: 上一帧的图片,torch.Size([1, 3, 256, 256])
     flow: 光流, torch.Size([1, 2, 256, 256])
     final_grid:  torch.Size([1, 2, 256, 256])
-    '''
+    """
     b, c, h, w = image.size()
     device = image.device
-    flow = torch.cat([flow[:, 0:1, :, :] / ((w - 1.0) / 2.0), flow[:, 1:2, :, :] / ((h - 1.0) / 2.0)],
-                     dim=1)  # normalize to [-1~1](from upper left to lower right
-    flow = flow.permute(0, 2, 3,
-                        1)  # if you wanna use grid_sample function, the channel(band) shape of show must be in the last dimension
+    flow = torch.cat(
+        [
+            flow[:, 0:1, :, :] / ((w - 1.0) / 2.0),
+            flow[:, 1:2, :, :] / ((h - 1.0) / 2.0),
+        ],
+        dim=1,
+    )  # normalize to [-1~1](from upper left to lower right
+    flow = flow.permute(
+        0, 2, 3, 1
+    )  # if you wanna use grid_sample function, the channel(band) shape of show must be in the last dimension
     x = np.linspace(-1, 1, w)
     y = np.linspace(-1, 1, h)
     X, Y = np.meshgrid(x, y)
-    grid = torch.cat((torch.from_numpy(X.astype('float32')).unsqueeze(0).unsqueeze(3),
-                      torch.from_numpy(Y.astype('float32')).unsqueeze(0).unsqueeze(3)), 3).to(device)
-    output = torch.nn.functional.grid_sample(image, grid + flow, mode='bilinear', padding_mode='zeros')
+    grid = torch.cat(
+        (
+            torch.from_numpy(X.astype("float32")).unsqueeze(0).unsqueeze(3),
+            torch.from_numpy(Y.astype("float32")).unsqueeze(0).unsqueeze(3),
+        ),
+        3,
+    ).to(device)
+    output = torch.nn.functional.grid_sample(
+        image, grid + flow, mode="bilinear", padding_mode="zeros"
+    )
     return output
 
 
 class FlowWarpingLoss(nn.Module):
     def __init__(self, metric):
-        super(FlowWarpingLoss, self).__init__()
+        super().__init__()
         self.metric = metric
 
     def warp(self, x, flow):
@@ -86,15 +101,25 @@ class FlowWarpingLoss(nn.Module):
         h, w = x.shape[2:]
         device = x.device
         # normalize the flow to [-1~1]
-        flow = torch.cat([flow[:, 0:1, :, :] / ((w - 1) / 2), flow[:, 1:2, :, :] / ((h - 1) / 2)], dim=1)
+        flow = torch.cat(
+            [flow[:, 0:1, :, :] / ((w - 1) / 2), flow[:, 1:2, :, :] / ((h - 1) / 2)],
+            dim=1,
+        )
         flow = flow.permute(0, 2, 3, 1)  # change to [b, h, w, c]
         # generate meshgrid
         x_idx = np.linspace(-1, 1, w)
         y_idx = np.linspace(-1, 1, h)
         X_idx, Y_idx = np.meshgrid(x_idx, y_idx)
-        grid = torch.cat((torch.from_numpy(X_idx.astype('float32')).unsqueeze(0).unsqueeze(3),
-                          torch.from_numpy(Y_idx.astype('float32')).unsqueeze(0).unsqueeze(3)), 3).to(device)
-        output = torch.nn.functional.grid_sample(x, grid + flow, mode='bilinear', padding_mode='zeros')
+        grid = torch.cat(
+            (
+                torch.from_numpy(X_idx.astype("float32")).unsqueeze(0).unsqueeze(3),
+                torch.from_numpy(Y_idx.astype("float32")).unsqueeze(0).unsqueeze(3),
+            ),
+            3,
+        ).to(device)
+        output = torch.nn.functional.grid_sample(
+            x, grid + flow, mode="bilinear", padding_mode="zeros"
+        )
         return output
 
     def __call__(self, x, y, flow, mask):
@@ -114,20 +139,21 @@ class FlowWarpingLoss(nn.Module):
         return loss
 
 
-class TVLoss():
+class TVLoss:
     # shift one pixel to get difference ( for both x and y direction)
     def __init__(self):
-        super(TVLoss, self).__init__()
+        super().__init__()
 
     def __call__(self, x):
         loss = torch.mean(torch.abs(x[:, :, :, :-1] - x[:, :, :, 1:])) + torch.mean(
-            torch.abs(x[:, :, :-1, :] - x[:, :, 1:, :]))
+            torch.abs(x[:, :, :-1, :] - x[:, :, 1:, :])
+        )
         return loss
 
 
 class WarpLoss(nn.Module):
     def __init__(self):
-        super(WarpLoss, self).__init__()
+        super().__init__()
         self.metric = nn.L1Loss()
 
     def forward(self, flow, mask, img1, img2):
@@ -153,27 +179,27 @@ class AdversarialLoss(nn.Module):
     https://arxiv.org/abs/1711.10337
     """
 
-    def __init__(self, type='nsgan', target_real_label=1.0, target_fake_label=0.0):
+    def __init__(self, type="nsgan", target_real_label=1.0, target_fake_label=0.0):
         r"""
         type = nsgan | lsgan | hinge
         """
-        super(AdversarialLoss, self).__init__()
+        super().__init__()
 
         self.type = type
-        self.register_buffer('real_label', torch.tensor(target_real_label))
-        self.register_buffer('fake_label', torch.tensor(target_fake_label))
+        self.register_buffer("real_label", torch.tensor(target_real_label))
+        self.register_buffer("fake_label", torch.tensor(target_fake_label))
 
-        if type == 'nsgan':
+        if type == "nsgan":
             self.criterion = nn.BCELoss()
 
-        elif type == 'lsgan':
+        elif type == "lsgan":
             self.criterion = nn.MSELoss()
 
-        elif type == 'hinge':
+        elif type == "hinge":
             self.criterion = nn.ReLU()
 
     def __call__(self, outputs, is_real, is_disc=None):
-        if self.type == 'hinge':
+        if self.type == "hinge":
             if is_disc:
                 if is_real:
                     outputs = -outputs
@@ -182,7 +208,9 @@ class AdversarialLoss(nn.Module):
                 return (-outputs).mean()
 
         else:
-            labels = (self.real_label if is_real else self.fake_label).expand_as(outputs)
+            labels = (self.real_label if is_real else self.fake_label).expand_as(
+                outputs
+            )
             loss = self.criterion(outputs, labels)
             return loss
 
@@ -195,8 +223,8 @@ class StyleLoss(nn.Module):
     """
 
     def __init__(self):
-        super(StyleLoss, self).__init__()
-        self.add_module('vgg', VGG19())
+        super().__init__()
+        self.add_module("vgg", VGG19())
         self.criterion = torch.nn.L1Loss()
 
     def compute_gram(self, x):
@@ -213,10 +241,18 @@ class StyleLoss(nn.Module):
 
         # Compute loss
         style_loss = 0.0
-        style_loss += self.criterion(self.compute_gram(x_vgg['relu2_2']), self.compute_gram(y_vgg['relu2_2']))
-        style_loss += self.criterion(self.compute_gram(x_vgg['relu3_4']), self.compute_gram(y_vgg['relu3_4']))
-        style_loss += self.criterion(self.compute_gram(x_vgg['relu4_4']), self.compute_gram(y_vgg['relu4_4']))
-        style_loss += self.criterion(self.compute_gram(x_vgg['relu5_2']), self.compute_gram(y_vgg['relu5_2']))
+        style_loss += self.criterion(
+            self.compute_gram(x_vgg["relu2_2"]), self.compute_gram(y_vgg["relu2_2"])
+        )
+        style_loss += self.criterion(
+            self.compute_gram(x_vgg["relu3_4"]), self.compute_gram(y_vgg["relu3_4"])
+        )
+        style_loss += self.criterion(
+            self.compute_gram(x_vgg["relu4_4"]), self.compute_gram(y_vgg["relu4_4"])
+        )
+        style_loss += self.criterion(
+            self.compute_gram(x_vgg["relu5_2"]), self.compute_gram(y_vgg["relu5_2"])
+        )
 
         return style_loss
 
@@ -229,8 +265,8 @@ class PerceptualLoss(nn.Module):
     """
 
     def __init__(self, weights=[1.0, 1.0, 1.0, 1.0, 1.0]):
-        super(PerceptualLoss, self).__init__()
-        self.add_module('vgg', VGG19())
+        super().__init__()
+        self.add_module("vgg", VGG19())
         self.criterion = torch.nn.L1Loss()
         self.weights = weights
 
@@ -239,18 +275,28 @@ class PerceptualLoss(nn.Module):
         x_vgg, y_vgg = self.vgg(x), self.vgg(y)
 
         content_loss = 0.0
-        content_loss += self.weights[0] * self.criterion(x_vgg['relu1_1'], y_vgg['relu1_1'])
-        content_loss += self.weights[1] * self.criterion(x_vgg['relu2_1'], y_vgg['relu2_1'])
-        content_loss += self.weights[2] * self.criterion(x_vgg['relu3_1'], y_vgg['relu3_1'])
-        content_loss += self.weights[3] * self.criterion(x_vgg['relu4_1'], y_vgg['relu4_1'])
-        content_loss += self.weights[4] * self.criterion(x_vgg['relu5_1'], y_vgg['relu5_1'])
+        content_loss += self.weights[0] * self.criterion(
+            x_vgg["relu1_1"], y_vgg["relu1_1"]
+        )
+        content_loss += self.weights[1] * self.criterion(
+            x_vgg["relu2_1"], y_vgg["relu2_1"]
+        )
+        content_loss += self.weights[2] * self.criterion(
+            x_vgg["relu3_1"], y_vgg["relu3_1"]
+        )
+        content_loss += self.weights[3] * self.criterion(
+            x_vgg["relu4_1"], y_vgg["relu4_1"]
+        )
+        content_loss += self.weights[4] * self.criterion(
+            x_vgg["relu5_1"], y_vgg["relu5_1"]
+        )
 
         return content_loss
 
 
 class VGG19(torch.nn.Module):
     def __init__(self):
-        super(VGG19, self).__init__()
+        super().__init__()
         features = models.vgg19(pretrained=True).features
         self.relu1_1 = torch.nn.Sequential()
         self.relu1_2 = torch.nn.Sequential()
@@ -348,35 +394,41 @@ class VGG19(torch.nn.Module):
         relu5_4 = self.relu5_4(relu5_3)
 
         out = {
-            'relu1_1': relu1_1,
-            'relu1_2': relu1_2,
-
-            'relu2_1': relu2_1,
-            'relu2_2': relu2_2,
-
-            'relu3_1': relu3_1,
-            'relu3_2': relu3_2,
-            'relu3_3': relu3_3,
-            'relu3_4': relu3_4,
-
-            'relu4_1': relu4_1,
-            'relu4_2': relu4_2,
-            'relu4_3': relu4_3,
-            'relu4_4': relu4_4,
-
-            'relu5_1': relu5_1,
-            'relu5_2': relu5_2,
-            'relu5_3': relu5_3,
-            'relu5_4': relu5_4,
+            "relu1_1": relu1_1,
+            "relu1_2": relu1_2,
+            "relu2_1": relu2_1,
+            "relu2_2": relu2_2,
+            "relu3_1": relu3_1,
+            "relu3_2": relu3_2,
+            "relu3_3": relu3_3,
+            "relu3_4": relu3_4,
+            "relu4_1": relu4_1,
+            "relu4_2": relu4_2,
+            "relu4_3": relu4_3,
+            "relu4_4": relu4_4,
+            "relu5_1": relu5_1,
+            "relu5_2": relu5_2,
+            "relu5_3": relu5_3,
+            "relu5_4": relu5_4,
         }
         return out
 
 
 # Some losses related to optical flows
 # From Unflow: https://github.com/simonmeister/UnFlow
-def FlowLoss(forward_flow, backward_flow, forward_gt_flow, backward_gt_flow, 
-              image_warp_loss_weight=1,fb_weight=0.1,census_loss_weight=0.25,
-              sm1_weight = 0.1, sm2_weight = 0.1,first_image=None, second_image=None):
+def FlowLoss(
+    forward_flow,
+    backward_flow,
+    forward_gt_flow,
+    backward_gt_flow,
+    image_warp_loss_weight=1,
+    fb_weight=0.1,
+    census_loss_weight=0.25,
+    sm1_weight=0.1,
+    sm2_weight=0.1,
+    first_image=None,
+    second_image=None,
+):
     """
     calculate the forward-backward consistency loss and the related image warp loss
     Args:
@@ -417,13 +469,12 @@ def FlowLoss(forward_flow, backward_flow, forward_gt_flow, backward_gt_flow,
     fb_occ_bw = (length_sq(flow_diff_bw_gt) > occ_thresh_bw).float().clone().detach()
 
     # 1 for no occ
-    mask_fw *= (1 - fb_occ_fw)
-    mask_bw *= (1 - fb_occ_bw)
+    mask_fw *= 1 - fb_occ_fw
+    mask_bw *= 1 - fb_occ_bw
 
     occ_fw = 1 - mask_fw
     occ_bw = 1 - mask_bw
 
-    
     # warp images
     second_image_warped = image_warp(second_image, backward_flow)  # frame 2 -> 1
     first_image_warped = image_warp(first_image, forward_flow)  # frame 1 -> 2
@@ -431,33 +482,35 @@ def FlowLoss(forward_flow, backward_flow, forward_gt_flow, backward_gt_flow,
     im_diff_bw = second_image - first_image_warped
     # calculate the image warp loss based on the occlusion regions calculated by forward and backward flows (gt)
     # occ_loss = occ_weight * (charbonnier_loss(occ_fw) + charbonnier_loss(occ_bw))
-    image_warp_loss = image_warp_loss_weight * (charbonnier_loss(im_diff_fw, mask_fw) + charbonnier_loss(im_diff_bw, mask_bw)) 
-    fb_loss = fb_weight * (charbonnier_loss(flow_diff_fw, mask_fw) + charbonnier_loss(flow_diff_bw, mask_bw)) 
-    
-    census_loss_second2first = TernaryLoss(second_image*mask_bw,first_image_warped*mask_bw).sum()/ (mask_bw.sum()+0.001)
-    census_loss_first2second = TernaryLoss(first_image*mask_fw,second_image_warped*mask_fw).sum()/ (mask_fw.sum()+0.001)
-    census_loss = census_loss_weight*(census_loss_second2first + census_loss_first2second)
-        
+    image_warp_loss = image_warp_loss_weight * (
+        charbonnier_loss(im_diff_fw, mask_fw) + charbonnier_loss(im_diff_bw, mask_bw)
+    )
+    fb_loss = fb_weight * (
+        charbonnier_loss(flow_diff_fw, mask_fw)
+        + charbonnier_loss(flow_diff_bw, mask_bw)
+    )
 
-    
-    
+    census_loss_second2first = TernaryLoss(
+        second_image * mask_bw, first_image_warped * mask_bw
+    ).sum() / (mask_bw.sum() + 0.001)
+    census_loss_first2second = TernaryLoss(
+        first_image * mask_fw, second_image_warped * mask_fw
+    ).sum() / (mask_fw.sum() + 0.001)
+    census_loss = census_loss_weight * (
+        census_loss_second2first + census_loss_first2second
+    )
+
     sm1_forward = smoothness_loss(forward_flow)
     sm1_backward = smoothness_loss(backward_flow)
-    sm1_loss = sm1_weight*(sm1_forward + sm1_backward)
-
+    sm1_loss = sm1_weight * (sm1_forward + sm1_backward)
 
     sm2_forward = second_order_loss(forward_flow)
     sm2_backward = second_order_loss(backward_flow)
-    sm2_loss = sm2_weight*(sm2_forward + sm2_backward)
-    
+    sm2_loss = sm2_weight * (sm2_forward + sm2_backward)
+
     loss = image_warp_loss + census_loss + sm1_loss + sm2_loss + fb_loss
-    
-    
-    
-    return loss,image_warp_loss,fb_loss,census_loss,sm1_loss,sm2_loss
 
-
-
+    return loss, image_warp_loss, fb_loss, census_loss, sm1_loss, sm2_loss
 
 
 def length_sq(x):
@@ -479,8 +532,8 @@ def smoothness_deltas(flow):
     mask_y = create_mask(flow, [[0, 1], [0, 0]])
     mask = torch.cat((mask_x, mask_y), dim=1)
     mask = mask.to(flow.device)
-    filter_x = torch.tensor([[0, 0, 0.], [0, 1, -1], [0, 0, 0]])
-    filter_y = torch.tensor([[0, 0, 0.], [0, 1, 0], [0, -1, 0]])
+    filter_x = torch.tensor([[0, 0, 0.0], [0, 1, -1], [0, 0, 0]])
+    filter_y = torch.tensor([[0, 0, 0.0], [0, 1, 0], [0, -1, 0]])
     weights = torch.ones([2, 1, 3, 3])
     weights[0, 0] = filter_x
     weights[1, 0] = filter_y
@@ -510,7 +563,9 @@ def charbonnier_loss(x, mask=None, truncate=None, alpha=0.45, beta=1.0, epsilon=
     """
     b, c, h, w = x.shape
     norm = b * c * h * w
-    error = torch.pow(torch.square(x * beta) + torch.square(torch.tensor(epsilon)), alpha)
+    error = torch.pow(
+        torch.square(x * beta) + torch.square(torch.tensor(epsilon)), alpha
+    )
     if mask is not None:
         error = mask * error
     if truncate is not None:
@@ -519,8 +574,6 @@ def charbonnier_loss(x, mask=None, truncate=None, alpha=0.45, beta=1.0, epsilon=
         return torch.sum(error) / (mask.sum() + epsilon)
     else:
         return torch.sum(error) / norm
-    
-    
 
 
 def second_order_deltas(flow):
@@ -535,10 +588,10 @@ def second_order_deltas(flow):
     mask = torch.cat((mask_x, mask_y, mask_diag, mask_diag), dim=1)
     mask = mask.to(flow.device)
 
-    filter_x = torch.tensor([[0, 0, 0.], [1, -2, 1], [0, 0, 0]])
-    filter_y = torch.tensor([[0, 1, 0.], [0, -2, 0], [0, 1, 0]])
-    filter_diag1 = torch.tensor([[1, 0, 0.], [0, -2, 0], [0, 0, 1]])
-    filter_diag2 = torch.tensor([[0, 0, 1.], [0, -2, 0], [1, 0, 0]])
+    filter_x = torch.tensor([[0, 0, 0.0], [1, -2, 1], [0, 0, 0]])
+    filter_y = torch.tensor([[0, 1, 0.0], [0, -2, 0], [0, 1, 0]])
+    filter_diag1 = torch.tensor([[1, 0, 0.0], [0, -2, 0], [0, 0, 1]])
+    filter_diag2 = torch.tensor([[0, 0, 1.0], [0, -2, 0], [1, 0, 0]])
     weights = torch.ones([4, 1, 3, 3])
     weights[0] = filter_x
     weights[1] = filter_y
@@ -568,7 +621,12 @@ def create_mask(tensor, paddings):
     inner_height = shape[2] - (paddings[0][0] + paddings[0][1])
     inner_width = shape[3] - (paddings[1][0] + paddings[1][1])
     inner = torch.ones([inner_height, inner_width])
-    torch_paddings = [paddings[1][0], paddings[1][1], paddings[0][0], paddings[0][1]]  # left, right, up and down
+    torch_paddings = [
+        paddings[1][0],
+        paddings[1][1],
+        paddings[0][0],
+        paddings[0][1],
+    ]  # left, right, up and down
     mask2d = F.pad(inner, pad=torch_paddings)
     mask3d = mask2d.unsqueeze(0).repeat(shape[0], 1, 1)
     mask4d = mask3d.unsqueeze(1)
@@ -596,7 +654,7 @@ def create_outgoing_mask(flow):
     grid_y = grid_y.to(flow.device)
 
     # flow_u, flow_v = torch.split(flow, split_size_or_sections=1, dim=1)  # [b, h, w]
-    flow_u,flow_v = flow[:,0,...], flow[:,1,...]
+    flow_u, flow_v = flow[:, 0, ...], flow[:, 1, ...]
     pos_x = grid_x + flow_u
     pos_y = grid_y + flow_v
     inside_x = torch.logical_and(pos_x <= (w - 1), pos_x >= 0)
@@ -607,11 +665,12 @@ def create_outgoing_mask(flow):
     return inside
 
 
-
-from basicsr.archs.spynet_arch import SpyNet
 from basicsr.archs.RAFT.raft import RAFT
+
+
 class FlowdeblurLoss(nn.Module):
     """Flow completion loss"""
+
     def __init__(self):
         super().__init__()
         # self.fix_spynet = SpyNet(load_path="/home/hczhang/CODE/AAAI/experiments/pretrained_models/flownet/spynet_sintel_final-3d2a1287.pth")
@@ -619,38 +678,46 @@ class FlowdeblurLoss(nn.Module):
         self.fix_spynet.eval()
         for p in self.fix_spynet.parameters():
             p.requires_grad = False
-        
 
         self.l1_criterion = nn.L1Loss()
-        
 
-    def forward(self, pre_flow_forwards,pre_flow_backwards, gt_local_frames,scale=1,returngtflow=False):
+    def forward(
+        self,
+        pre_flow_forwards,
+        pre_flow_backwards,
+        gt_local_frames,
+        scale=1,
+        returngtflow=False,
+    ):
         b, l_t, c, h, w = gt_local_frames.size()
-        
+
         with torch.no_grad():
             # compute gt forward and backward flows
-            gt_local_frames = F.interpolate(gt_local_frames.view(-1, c, h, w),
-                                            scale_factor=1 / scale,
-                                            mode='bilinear',
-                                            align_corners=True,
-                                            recompute_scale_factor=True)
-            gt_local_frames = gt_local_frames.view(b, l_t, c, h //scale, w // scale)
+            gt_local_frames = F.interpolate(
+                gt_local_frames.view(-1, c, h, w),
+                scale_factor=1 / scale,
+                mode="bilinear",
+                align_corners=True,
+                recompute_scale_factor=True,
+            )
+            gt_local_frames = gt_local_frames.view(b, l_t, c, h // scale, w // scale)
             gtlf_1 = gt_local_frames[:, :-1, :, :, :].reshape(
-                -1, c, h // scale, w // scale)
+                -1, c, h // scale, w // scale
+            )
             gtlf_2 = gt_local_frames[:, 1:, :, :, :].reshape(
-                -1, c, h // scale, w // scale)
+                -1, c, h // scale, w // scale
+            )
             gt_flows_backward = self.fix_spynet(gtlf_1, gtlf_2)
             gt_flows_forward = self.fix_spynet(gtlf_2, gtlf_1)
 
         # calculate loss for flow completion
         forward_flow_loss = self.l1_criterion(
-            pre_flow_forwards.view(-1, 2, h // scale, w // scale), gt_flows_forward)
+            pre_flow_forwards.view(-1, 2, h // scale, w // scale), gt_flows_forward
+        )
         backward_flow_loss = self.l1_criterion(
-            pre_flow_backwards.view(-1, 2, h // scale, w // scale), gt_flows_backward)
+            pre_flow_backwards.view(-1, 2, h // scale, w // scale), gt_flows_backward
+        )
         flow_loss = forward_flow_loss + backward_flow_loss
         if returngtflow:
-            return flow_loss,gt_flows_forward,gt_flows_backward
+            return flow_loss, gt_flows_forward, gt_flows_backward
         return flow_loss
-
-
-

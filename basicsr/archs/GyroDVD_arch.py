@@ -1,16 +1,14 @@
-import torch
-import torch.nn as nn
 # from basicsr.models.archs import recons_video81 as recons_video
 # from basicsr.models.archs import flow_pwc82 as flow_pwc
-import numpy as np
+import torch
+from torch import nn
 from torch.nn import functional as F
-import torch.utils.checkpoint as checkpoint
-from basicsr.utils.registry import ARCH_REGISTRY
 from torchvision.ops import DeformConv2d
+
+from basicsr.utils.registry import ARCH_REGISTRY
 
 
 class LayerNormFunction(torch.autograd.Function):
-
     @staticmethod
     def forward(ctx, x, weight, bias, eps):
         ctx.eps = eps
@@ -32,17 +30,20 @@ class LayerNormFunction(torch.autograd.Function):
         mean_g = g.mean(dim=1, keepdim=True)
 
         mean_gy = (g * y).mean(dim=1, keepdim=True)
-        gx = 1. / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
-        return gx, (grad_output * y).sum(dim=3).sum(dim=2).sum(dim=0), grad_output.sum(dim=3).sum(dim=2).sum(
-            dim=0), None
+        gx = 1.0 / torch.sqrt(var + eps) * (g - y * mean_gy - mean_g)
+        return (
+            gx,
+            (grad_output * y).sum(dim=3).sum(dim=2).sum(dim=0),
+            grad_output.sum(dim=3).sum(dim=2).sum(dim=0),
+            None,
+        )
 
 
 class LayerNorm2d(nn.Module):
-
     def __init__(self, channels, eps=1e-6):
-        super(LayerNorm2d, self).__init__()
-        self.register_parameter('weight', nn.Parameter(torch.ones(channels)))
-        self.register_parameter('bias', nn.Parameter(torch.zeros(channels)))
+        super().__init__()
+        self.register_parameter("weight", nn.Parameter(torch.ones(channels)))
+        self.register_parameter("bias", nn.Parameter(torch.zeros(channels)))
         self.eps = eps
 
     def forward(self, x):
@@ -51,7 +52,7 @@ class LayerNorm2d(nn.Module):
 
 class CALayer(nn.Module):
     def __init__(self, channel, reduction=16, bias=False):
-        super(CALayer, self).__init__()
+        super().__init__()
         # global average pooling: feature --> point
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         # feature channel downscale and upscale --> channel weight
@@ -60,7 +61,7 @@ class CALayer(nn.Module):
             nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=bias),
             nn.ReLU(inplace=True),
             nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=bias),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def forward(self, x):
@@ -71,7 +72,7 @@ class CALayer(nn.Module):
 
 class CALayer2(nn.Module):
     def __init__(self, channel, reduction=16, bias=False):
-        super(CALayer2, self).__init__()
+        super().__init__()
         # global average pooling: feature --> point
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         # feature channel downscale and upscale --> channel weight
@@ -80,7 +81,7 @@ class CALayer2(nn.Module):
             nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=bias),
             nn.ReLU(inplace=True),
             nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=bias),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def forward(self, x):
@@ -89,17 +90,21 @@ class CALayer2(nn.Module):
         return x * y
 
 
-
 def conv(in_channels, out_channels, kernel_size, bias=False, stride=1):
     return nn.Conv2d(
-        in_channels, out_channels, kernel_size,
-        padding=(kernel_size // 2), bias=bias, stride=stride)
+        in_channels,
+        out_channels,
+        kernel_size,
+        padding=(kernel_size // 2),
+        bias=bias,
+        stride=stride,
+    )
 
 
 ## Channel Attention Block (CAB)
 class CAB(nn.Module):
     def __init__(self, n_feat, kernel_size, reduction, bias, act):
-        super(CAB, self).__init__()
+        super().__init__()
         modules_body = []
         modules_body.append(conv(n_feat, n_feat, kernel_size, bias=bias))
         modules_body.append(act)
@@ -117,8 +122,15 @@ class CAB(nn.Module):
 
 class RepConv(nn.Module):
     def __init__(self, n_feat, kernel_size, bias):
-        super(RepConv, self).__init__()
-        self.conv_1 = nn.Conv2d(n_feat, n_feat, kernel_size, bias=bias, padding=kernel_size // 2, groups=n_feat)
+        super().__init__()
+        self.conv_1 = nn.Conv2d(
+            n_feat,
+            n_feat,
+            kernel_size,
+            bias=bias,
+            padding=kernel_size // 2,
+            groups=n_feat,
+        )
         self.conv_2 = nn.Conv2d(n_feat, n_feat, 3, bias=bias, padding=1, groups=n_feat)
 
     def forward(self, x):
@@ -130,7 +142,7 @@ class RepConv(nn.Module):
 
 class RepConv2(nn.Module):
     def __init__(self, n_feat, kernel_size, bias):
-        super(RepConv2, self).__init__()
+        super().__init__()
         # self.conv_1 = nn.Conv2d(n_feat, n_feat, kernel_size, bias=bias, padding=kernel_size//2, groups=n_feat//8)
         self.conv_2 = nn.Conv2d(n_feat, n_feat, 3, bias=bias, padding=1, groups=n_feat)
 
@@ -154,7 +166,7 @@ class SimpleGate2(nn.Module):
 
 class CAB1(nn.Module):
     def __init__(self, n_feat, kernel_size, reduction, bias, act):
-        super(CAB1, self).__init__()
+        super().__init__()
         modules_body = []
         scale_factor = 1
         n_scale_feat = int(scale_factor * n_feat)
@@ -179,15 +191,24 @@ class CAB1(nn.Module):
 
 class CAB2(nn.Module):
     def __init__(self, n_feat, kernel_size, reduction, bias, act, add_channel=0):
-        super(CAB2, self).__init__()
+        super().__init__()
         modules_body = []
         scale_factor = 1
         self.n_feat = n_feat
         self.add_channel = add_channel
         n_scale_feat = int(scale_factor * n_feat)
-        self.conv1 = nn.Conv2d(self.add_channel, self.add_channel, 3, bias=bias, padding=1, groups=self.add_channel)
+        self.conv1 = nn.Conv2d(
+            self.add_channel,
+            self.add_channel,
+            3,
+            bias=bias,
+            padding=1,
+            groups=self.add_channel,
+        )
         self.norm = LayerNorm2d(self.add_channel + n_feat)
-        modules_body.append(conv(n_feat + self.add_channel, n_scale_feat * 2, 1, bias=bias))
+        modules_body.append(
+            conv(n_feat + self.add_channel, n_scale_feat * 2, 1, bias=bias)
+        )
         modules_body.append(RepConv2(n_scale_feat * 2, kernel_size, bias))
         modules_body.append(SimpleGate())
         modules_body.append(RepConv(n_scale_feat, kernel_size, bias))
@@ -200,7 +221,7 @@ class CAB2(nn.Module):
         self.beta = nn.Parameter(torch.zeros((1, n_feat, 1, 1)), requires_grad=True)
 
     def forward(self, x_input):
-        shortcut, hw = x_input[:, 0:self.n_feat], x_input[:, self.n_feat:]
+        shortcut, hw = x_input[:, 0 : self.n_feat], x_input[:, self.n_feat :]
         hw = self.conv1(hw)
         res = self.body(self.norm(torch.cat((shortcut, hw), dim=1)))
         # res = self.CA(res)
@@ -209,9 +230,7 @@ class CAB2(nn.Module):
 
 
 class PixelShufflePack(nn.Module):
-
-    def __init__(self, in_channels, out_channels, scale_factor,
-                 upsample_kernel):
+    def __init__(self, in_channels, out_channels, scale_factor, upsample_kernel):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -221,7 +240,8 @@ class PixelShufflePack(nn.Module):
             self.in_channels,
             self.out_channels * scale_factor * scale_factor,
             self.upsample_kernel,
-            padding=(self.upsample_kernel - 1) // 2)
+            padding=(self.upsample_kernel - 1) // 2,
+        )
         # self.init_weights()
 
     def init_weights(self):
@@ -233,11 +253,17 @@ class PixelShufflePack(nn.Module):
         return x
 
 
-
 class DownSample(nn.Module):
     def __init__(self, in_channels, s_factor):
-        super(DownSample, self).__init__()
-        self.down = nn.Conv2d(in_channels, in_channels + s_factor, kernel_size=3, stride=2, padding=1, bias=True)
+        super().__init__()
+        self.down = nn.Conv2d(
+            in_channels,
+            in_channels + s_factor,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=True,
+        )
 
     def forward(self, x):
         x = self.down(x)
@@ -246,9 +272,13 @@ class DownSample(nn.Module):
 
 class SkipUpSample(nn.Module):
     def __init__(self, in_channels, s_factor):
-        super(SkipUpSample, self).__init__()
-        self.up = nn.Sequential(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-                                nn.Conv2d(in_channels + s_factor, in_channels, 1, stride=1, padding=0, bias=False))
+        super().__init__()
+        self.up = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+            nn.Conv2d(
+                in_channels + s_factor, in_channels, 1, stride=1, padding=0, bias=False
+            ),
+        )
 
     def forward(self, x, y):
         x = self.up(x)
@@ -257,21 +287,31 @@ class SkipUpSample(nn.Module):
 
 
 class KGS_block(nn.Module):
-    def __init__(self, n_features, kernel_size, reduction, bias=False, scale_unetfeats=48):
-        super(KGS_block, self).__init__()
+    def __init__(
+        self, n_features, kernel_size, reduction, bias=False, scale_unetfeats=48
+    ):
+        super().__init__()
         n_feat = n_features
         scale_unetfeats = int(n_feat / 2)
         act = nn.PReLU()
         number = n_feat // 2 // 8
         self.number = number
-        self.encoder_level1 = [CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
-                               CAB1(n_feat, 5, reduction, bias=bias, act=act)]
-        self.encoder_level1_1 = [CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
-                                 CAB1(n_feat, 5, reduction, bias=bias, act=act)]
-        self.encoder_level1_2 = [CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
-                                 CAB1(n_feat, 5, reduction, bias=bias, act=act)]
-        self.encoder_level1_3 = [CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
-                                 CAB1(n_feat, 5, reduction, bias=bias, act=act)]
+        self.encoder_level1 = [
+            CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
+            CAB1(n_feat, 5, reduction, bias=bias, act=act),
+        ]
+        self.encoder_level1_1 = [
+            CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
+            CAB1(n_feat, 5, reduction, bias=bias, act=act),
+        ]
+        self.encoder_level1_2 = [
+            CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
+            CAB1(n_feat, 5, reduction, bias=bias, act=act),
+        ]
+        self.encoder_level1_3 = [
+            CAB2(n_feat, 5, reduction, bias=bias, act=act, add_channel=8 * self.number),
+            CAB1(n_feat, 5, reduction, bias=bias, act=act),
+        ]
         self.encoder_level1 = nn.Sequential(*self.encoder_level1)
         self.encoder_level1_1 = nn.Sequential(*self.encoder_level1_1)
         self.encoder_level1_2 = nn.Sequential(*self.encoder_level1_2)
@@ -284,7 +324,7 @@ class KGS_block(nn.Module):
         self.offset_conv1 = nn.Sequential(
             nn.Conv2d(n_feat, n_feat, 1, stride=1, padding=0, bias=True),
             nn.PReLU(),
-            nn.Conv2d(n_feat, 8 * 2, 1, stride=1, padding=0, bias=True)
+            nn.Conv2d(n_feat, 8 * 2, 1, stride=1, padding=0, bias=True),
         )
 
     def spatial_shift2(self, x, offset):
@@ -303,7 +343,7 @@ class KGS_block(nn.Module):
         grid_y, grid_x = torch.meshgrid(
             torch.linspace(0, H - 1, H, dtype=x.dtype, device=x.device),
             torch.linspace(0, W - 1, W, dtype=x.dtype, device=x.device),
-            indexing='ij'
+            indexing="ij",
         )
         grid_x = grid_x.unsqueeze(0).unsqueeze(0).repeat(B, 1, 1, 1)  # (B, 1, H, W)
         grid_y = grid_y.unsqueeze(0).unsqueeze(0).repeat(B, 1, 1, 1)  # (B, 1, H, W)
@@ -325,9 +365,9 @@ class KGS_block(nn.Module):
             warped = F.grid_sample(
                 x_split[:, i],  # (B, C_per_shift, H, W)
                 vgrid[:, i].permute(0, 2, 3, 1),  # (B, H, W, 2)
-                mode='bilinear',
-                padding_mode='zeros',
-                align_corners=True
+                mode="bilinear",
+                padding_mode="zeros",
+                align_corners=True,
             )
             out.append(warped)
 
@@ -335,23 +375,21 @@ class KGS_block(nn.Module):
         out = torch.cat(out, dim=1)  # (B, 8*C_per_shift, H, W)
         return out
 
-
     def channel_shift(self, x, offset, div=2, step=0):
         B, C, H, W = x.shape
 
-        y = x[:, 0:8 * self.number, ...]
+        y = x[:, 0 : 8 * self.number, ...]
 
-
-        if step == 0: # shift 0
+        if step == 0:  # shift 0
             hw = x
             offset = offset
-        elif step == 1: # shift +1
-            hw = x[:, -8 * self.number:, ...]
+        elif step == 1:  # shift +1
+            hw = x[:, -8 * self.number :, ...]
             hw = torch.cat((hw[1:], hw[-1:]), dim=0)
             y = torch.cat((y, hw), dim=1)
             offset = torch.cat((offset[1:], offset[-1:]), dim=0)
-        elif step == 2: # shift -1
-            hw = x[:, -8 * self.number:, ...]
+        elif step == 2:  # shift -1
+            hw = x[:, -8 * self.number :, ...]
             hw = torch.cat((hw[0:1], hw[0:-1]), dim=0)
             y = torch.cat((y, hw), dim=1)
             offset = torch.cat((offset[0:1], offset[0:-1]), dim=0)
@@ -383,21 +421,35 @@ class KernelDeformableBlock(nn.Module):
 
         kernel_size = 3
         padding = kernel_size // 2
-        out_channels = deform_groups * 3 * (kernel_size ** 2)
+        out_channels = deform_groups * 3 * (kernel_size**2)
 
-        #CAB1(n_feat, 5, reduction, bias=bias, act=act)
+        # CAB1(n_feat, 5, reduction, bias=bias, act=act)
         self.naf_block_blur = CAB1(channel_blur, 3, 4, True, None)
         self.naf_block_kernel = CAB1(channel_kernel, 3, 4, True, None)
 
         self.offset_conv = nn.Sequential(
-            nn.Conv2d(channel_kernel, channel_kernel, 1, stride=1, padding=0, bias=True),
+            nn.Conv2d(
+                channel_kernel, channel_kernel, 1, stride=1, padding=0, bias=True
+            ),
             nn.PReLU(),
-            nn.Conv2d(channel_kernel, out_channels, 1, stride=1, padding=0, bias=True)
+            nn.Conv2d(channel_kernel, out_channels, 1, stride=1, padding=0, bias=True),
         )
 
-        self.deform = DeformConv2d(channel_blur, channel_blur, kernel_size, padding=2, groups=deform_groups, dilation=2)
-        self.fusion = nn.Conv2d(in_channels=channel_blur * 2, out_channels=channel_blur, kernel_size=3, stride=1, padding=1)
-
+        self.deform = DeformConv2d(
+            channel_blur,
+            channel_blur,
+            kernel_size,
+            padding=2,
+            groups=deform_groups,
+            dilation=2,
+        )
+        self.fusion = nn.Conv2d(
+            in_channels=channel_blur * 2,
+            out_channels=channel_blur,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
 
     def offset_gen(self, x):
         o1, o2, mask = torch.chunk(x, 3, dim=1)
@@ -407,14 +459,14 @@ class KernelDeformableBlock(nn.Module):
         return offset, mask
 
     def forward(self, feat_blur, feat_kernel):
-        '''
+        """
         Input
             feat_blur: (B, 256, H/8, W/8)
             feat_kernel: (B, 256, H/8, W/8)
 
         Output
             feat_blur: (B, 256, H/8, W/8)
-        '''
+        """
 
         feat_blur = self.naf_block_blur(feat_blur)
         feat_kernel = self.naf_block_kernel(feat_kernel)
@@ -429,8 +481,10 @@ class KernelDeformableBlock(nn.Module):
 
 
 class Encoder2(nn.Module):
-    def __init__(self, n_features, kernel_size=3, reduction=4, bias=False, scale_unetfeats=48):
-        super(Encoder2, self).__init__()
+    def __init__(
+        self, n_features, kernel_size=3, reduction=4, bias=False, scale_unetfeats=48
+    ):
+        super().__init__()
         n_feat = n_features
         scale_unetfeats = 0
         act = nn.PReLU()
@@ -440,20 +494,32 @@ class Encoder2(nn.Module):
 
         self.encoder_level0_def = KernelDeformableBlock(n_feat0, n_feat0, 2)
         self.encoder_level1_def = KernelDeformableBlock(n_feat, n_feat, 4)
-        self.encoder_level2_def = KernelDeformableBlock(n_feat + scale_unetfeats, n_feat + scale_unetfeats, 8)
+        self.encoder_level2_def = KernelDeformableBlock(
+            n_feat + scale_unetfeats, n_feat + scale_unetfeats, 8
+        )
 
         self.concat_ker = CAB(n_feat0, kernel_size, reduction, bias=bias, act=act)
-        self.down01_ker = nn.Sequential(nn.Conv2d(n_feat0, n_feat, 2, 2, 0, bias=False), nn.PReLU())
+        self.down01_ker = nn.Sequential(
+            nn.Conv2d(n_feat0, n_feat, 2, 2, 0, bias=False), nn.PReLU()
+        )
         self.down12_ker = DownSample(n_feat, scale_unetfeats)
         self.skip_attn1_ker = CAB(n_feat, kernel_size, reduction, bias=bias, act=act)
         self.up21_ker = SkipUpSample(n_feat, scale_unetfeats)
 
-        self.encoder_level2 = KGS_block(n_feat + scale_unetfeats, kernel_size, reduction, bias)
-        self.encoder_level2_1 = KGS_block(n_feat + scale_unetfeats, kernel_size, reduction, bias)
-        self.encoder_level2_2 = KGS_block(n_feat + scale_unetfeats, kernel_size, reduction, bias)
+        self.encoder_level2 = KGS_block(
+            n_feat + scale_unetfeats, kernel_size, reduction, bias
+        )
+        self.encoder_level2_1 = KGS_block(
+            n_feat + scale_unetfeats, kernel_size, reduction, bias
+        )
+        self.encoder_level2_2 = KGS_block(
+            n_feat + scale_unetfeats, kernel_size, reduction, bias
+        )
 
         self.concat = CAB(n_feat0, kernel_size, reduction, bias=bias, act=act)
-        self.down01 = nn.Sequential(nn.Conv2d(n_feat0, n_feat, 2, 2, 0, bias=False), nn.PReLU())
+        self.down01 = nn.Sequential(
+            nn.Conv2d(n_feat0, n_feat, 2, 2, 0, bias=False), nn.PReLU()
+        )
 
         self.down12 = DownSample(n_feat, scale_unetfeats)
 
@@ -464,22 +530,27 @@ class Encoder2(nn.Module):
         self.decoder_level1_4 = KGS_block(n_feat, kernel_size, reduction, bias)
         self.decoder_level1_5 = KGS_block(n_feat, kernel_size, reduction, bias)
 
-        self.decoder_level2 = KGS_block(n_feat + scale_unetfeats, kernel_size, reduction, bias)
-        self.decoder_level2_1 = KGS_block(n_feat + scale_unetfeats, kernel_size, reduction, bias)
-        self.decoder_level2_2 = KGS_block(n_feat + scale_unetfeats, kernel_size, reduction, bias)
-
+        self.decoder_level2 = KGS_block(
+            n_feat + scale_unetfeats, kernel_size, reduction, bias
+        )
+        self.decoder_level2_1 = KGS_block(
+            n_feat + scale_unetfeats, kernel_size, reduction, bias
+        )
+        self.decoder_level2_2 = KGS_block(
+            n_feat + scale_unetfeats, kernel_size, reduction, bias
+        )
 
         self.skip_attn1 = CAB(n_feat, kernel_size, reduction, bias=bias, act=act)
         self.upsample0 = PixelShufflePack(n_feat, n_feat0, 2, upsample_kernel=3)
-        self.skip_conv = CAB(n_feat0, kernel_size, reduction, bias=bias,
-                             act=act)  # conv(n_feat, n_feat, kernel_size, bias=bias)
+        self.skip_conv = CAB(
+            n_feat0, kernel_size, reduction, bias=bias, act=act
+        )  # conv(n_feat, n_feat, kernel_size, bias=bias)
         self.out_conv = CAB(n_feat0, kernel_size, reduction, bias=bias, act=act)
         self.conv_hr0 = conv(n_feat0, n_feat0, kernel_size, bias=bias)
 
         self.up21 = SkipUpSample(n_feat, scale_unetfeats)
         div = 4
         self.slice_c = n_feat // div
-
 
     def forward(self, x, ker, reverse=False):
         # shortcut = x
@@ -520,38 +591,67 @@ class Encoder2(nn.Module):
         dec11, dec1_ker = self.decoder_level1_4(dec11, dec1_ker)
         dec11, dec1_ker = self.decoder_level1_5(dec11, dec1_ker)
 
-        dec11_out = self.conv_hr0(self.act(self.upsample0(dec11))) + self.skip_conv(shortcut)
+        dec11_out = self.conv_hr0(self.act(self.upsample0(dec11))) + self.skip_conv(
+            shortcut
+        )
         dec11_out = self.out_conv(dec11_out)
         return dec11_out  # [enc11, enc22, enc33], [dec11, dec22, dec33]
 
 
-
 class TFR_UNet(nn.Module):
-    def __init__(self, n_feat0, n_feat, kernel_size, reduction, act, bias, scale_unetfeats):
-        super(TFR_UNet, self).__init__()
+    def __init__(
+        self, n_feat0, n_feat, kernel_size, reduction, act, bias, scale_unetfeats
+    ):
+        super().__init__()
         scale_unetfeats = 4
-        self.encoder_level1 = [CAB(n_feat0, kernel_size, reduction, bias=bias, act=act) for _ in range(1)]
-        self.encoder_level2 = [CAB(n_feat0 + scale_unetfeats, kernel_size, reduction, bias=bias, act=act) for _ in
-                               range(1)]
-        self.encoder_level3 = [CAB(n_feat0 + 2 * scale_unetfeats, kernel_size, reduction, bias=bias, act=act) for _ in
-                               range(1)]
+        self.encoder_level1 = [
+            CAB(n_feat0, kernel_size, reduction, bias=bias, act=act) for _ in range(1)
+        ]
+        self.encoder_level2 = [
+            CAB(n_feat0 + scale_unetfeats, kernel_size, reduction, bias=bias, act=act)
+            for _ in range(1)
+        ]
+        self.encoder_level3 = [
+            CAB(
+                n_feat0 + 2 * scale_unetfeats,
+                kernel_size,
+                reduction,
+                bias=bias,
+                act=act,
+            )
+            for _ in range(1)
+        ]
         self.encoder_level1 = nn.Sequential(*self.encoder_level1)
         self.encoder_level2 = nn.Sequential(*self.encoder_level2)
         self.encoder_level3 = nn.Sequential(*self.encoder_level3)
         self.down12 = DownSample(n_feat0, scale_unetfeats)
         self.down23 = DownSample(n_feat0 + scale_unetfeats, scale_unetfeats)
 
-        self.decoder_level1 = [CAB(n_feat0, kernel_size, reduction, bias=bias, act=act) for _ in range(1)]
-        self.decoder_level2 = [CAB(n_feat0 + scale_unetfeats, kernel_size, reduction, bias=bias, act=act) for _ in
-                               range(1)]
-        self.decoder_level3 = [CAB(n_feat0 + scale_unetfeats * 2, kernel_size, reduction, bias=bias, act=act) for _ in
-                               range(1)]
+        self.decoder_level1 = [
+            CAB(n_feat0, kernel_size, reduction, bias=bias, act=act) for _ in range(1)
+        ]
+        self.decoder_level2 = [
+            CAB(n_feat0 + scale_unetfeats, kernel_size, reduction, bias=bias, act=act)
+            for _ in range(1)
+        ]
+        self.decoder_level3 = [
+            CAB(
+                n_feat0 + scale_unetfeats * 2,
+                kernel_size,
+                reduction,
+                bias=bias,
+                act=act,
+            )
+            for _ in range(1)
+        ]
         self.decoder_level1 = nn.Sequential(*self.decoder_level1)
         self.decoder_level2 = nn.Sequential(*self.decoder_level2)
         self.decoder_level3 = nn.Sequential(*self.decoder_level3)
 
         self.skip_attn1 = CAB(n_feat0, kernel_size, reduction, bias=bias, act=act)
-        self.skip_attn2 = CAB(n_feat0 + scale_unetfeats, kernel_size, reduction, bias=bias, act=act)
+        self.skip_attn2 = CAB(
+            n_feat0 + scale_unetfeats, kernel_size, reduction, bias=bias, act=act
+        )
         self.up21 = SkipUpSample(n_feat0, scale_unetfeats)
         self.up32 = SkipUpSample(n_feat0 + scale_unetfeats, scale_unetfeats)
 
@@ -573,13 +673,13 @@ class TFR_UNet(nn.Module):
 
 class GyroDVD(nn.Module):
     def __init__(self, n_feats2=128, future_frames=1, past_frames=1):
-        super(GyroDVD, self).__init__()
+        super().__init__()
         self.n_feats = 48
         self.n_feats2 = n_feats2
         self.num_ff = future_frames
         self.num_fb = past_frames
         self.ds_ratio = 4
-        self.device = torch.device('cuda')
+        self.device = torch.device("cuda")
         self.n_feats0 = 24
         self.feat_extract = nn.Sequential(nn.Conv2d(3, self.n_feats0, 3, 1, 1))
 
@@ -587,23 +687,50 @@ class GyroDVD(nn.Module):
 
         self.feat_extract_tran = nn.Sequential(nn.Conv2d(16, self.n_feats0, 3, 1, 1))
 
-
         self.conv_last = conv(self.n_feats0, 3, 5, bias=False)
 
         self.lrelu = nn.PReLU()
         self.stage1 = Encoder2(self.n_feats2, scale_unetfeats=0)
-        self.orb1 = TFR_UNet(self.n_feats0, self.n_feats, kernel_size=3, reduction=4, act=nn.PReLU(), bias=False,
-                             scale_unetfeats=0)
-        self.orb1_rot = TFR_UNet(self.n_feats0, self.n_feats, kernel_size=3, reduction=4, act=nn.PReLU(), bias=False,
-                             scale_unetfeats=0)
-        self.orb1_tran = TFR_UNet(self.n_feats0, self.n_feats, kernel_size=3, reduction=4, act=nn.PReLU(), bias=False,
-                             scale_unetfeats=0)
+        self.orb1 = TFR_UNet(
+            self.n_feats0,
+            self.n_feats,
+            kernel_size=3,
+            reduction=4,
+            act=nn.PReLU(),
+            bias=False,
+            scale_unetfeats=0,
+        )
+        self.orb1_rot = TFR_UNet(
+            self.n_feats0,
+            self.n_feats,
+            kernel_size=3,
+            reduction=4,
+            act=nn.PReLU(),
+            bias=False,
+            scale_unetfeats=0,
+        )
+        self.orb1_tran = TFR_UNet(
+            self.n_feats0,
+            self.n_feats,
+            kernel_size=3,
+            reduction=4,
+            act=nn.PReLU(),
+            bias=False,
+            scale_unetfeats=0,
+        )
         self.conv_trans = conv(self.n_feats0, self.n_feats0, 3, bias=True)
         self.conv_trans_rot = conv(self.n_feats0, self.n_feats0, 3, bias=True)
         self.conv_trans_tran = conv(self.n_feats0, self.n_feats0, 3, bias=True)
 
-        self.rorb1 = TFR_UNet(self.n_feats0, self.n_feats, kernel_size=3, reduction=4, act=nn.PReLU(), bias=False,
-                              scale_unetfeats=0)
+        self.rorb1 = TFR_UNet(
+            self.n_feats0,
+            self.n_feats,
+            kernel_size=3,
+            reduction=4,
+            act=nn.PReLU(),
+            bias=False,
+            scale_unetfeats=0,
+        )
         self.rconcat = nn.Conv2d(self.n_feats0 * 3, self.n_feats0, 3, 1, 1, bias=True)
 
         div = 4
@@ -626,7 +753,6 @@ class GyroDVD(nn.Module):
         x0 = self.orb1_tran(x0)
         res0 = x0 + shortcut
         return res0, self.conv_trans_tran(res0)
-
 
     def stage2(self, x0, sam1_feats, decoder_out0):
         x = self.rconcat(torch.cat((x0, sam1_feats, decoder_out0), dim=1))
@@ -654,8 +780,12 @@ class GyroDVD(nn.Module):
         x0_ker = x0_rot + x0_tran
 
         decoder_outs = self.stage1(sam_features, x0_ker)
-        output_features = self.stage2(x0[self.num_fb:frames-self.num_ff], sam_features0[self.num_fb:frames-self.num_ff], decoder_outs[self.num_fb:frames-self.num_ff])
-        out = output_features + shortcut[self.num_fb:frames-self.num_ff]
+        output_features = self.stage2(
+            x0[self.num_fb : frames - self.num_ff],
+            sam_features0[self.num_fb : frames - self.num_ff],
+            decoder_outs[self.num_fb : frames - self.num_ff],
+        )
+        out = output_features + shortcut[self.num_fb : frames - self.num_ff]
 
         return out.unsqueeze(0)
 
@@ -669,6 +799,7 @@ class GyroDVD_128(GyroDVD):
             past_frames=past_frames,
         )
 
+
 @ARCH_REGISTRY.register()
 class GyroDVD_96(GyroDVD):
     def __init__(self, n_feats2=96, future_frames=1, past_frames=1):
@@ -678,6 +809,7 @@ class GyroDVD_96(GyroDVD):
             past_frames=past_frames,
         )
 
+
 @ARCH_REGISTRY.register()
 class GyroDVD_64(GyroDVD):
     def __init__(self, n_feats2=64, future_frames=1, past_frames=1):
@@ -686,6 +818,7 @@ class GyroDVD_64(GyroDVD):
             future_frames=future_frames,
             past_frames=past_frames,
         )
+
 
 @ARCH_REGISTRY.register()
 class GyroDVD_48(GyroDVD):

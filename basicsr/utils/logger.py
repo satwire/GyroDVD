@@ -1,16 +1,18 @@
 import datetime
 import logging
+import os
 import time
-import wandb
-from .dist_util import get_dist_info, master_only
+
 import numpy as np
 import torchvision
-import os
+import wandb
+
+from .dist_util import get_dist_info, master_only
+
 initialized_logger = {}
 
 
-class AvgTimer():
-
+class AvgTimer:
     def __init__(self, window=200):
         self.window = window  # average window
         self.current_time = 0
@@ -43,8 +45,10 @@ class AvgTimer():
     def get_avg_time(self):
         return self.avg_time
 
-class AverageMeter(object):
+
+class AverageMeter:
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 
@@ -61,10 +65,10 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
     def __repr__(self):
-        return '{:.5f} ({:.5f})'.format(self.val, self.avg)
+        return f"{self.val:.5f} ({self.avg:.5f})"
 
 
-class MessageLogger():
+class MessageLogger:
     """Message logger for printing.
 
     Args:
@@ -75,26 +79,23 @@ class MessageLogger():
             use_tb_logger (bool): Use tensorboard logger.
         start_iter (int): Start iter. Default: 1.
         tb_logger (obj:`tb_logger`): Tensorboard logger. Default： None.
-        
+
     """
 
-    def __init__(self, opt, start_iter=1, tb_logger=None,wandb_logger= None):
-        self.exp_name = opt['name']
-        self.interval = opt['logger']['print_freq']
+    def __init__(self, opt, start_iter=1, tb_logger=None, wandb_logger=None):
+        self.exp_name = opt["name"]
+        self.interval = opt["logger"]["print_freq"]
         self.start_iter = start_iter
-        self.max_iters = opt['train']['total_iter']
-        self.use_tb_logger = opt['logger']['use_tb_logger']
+        self.max_iters = opt["train"]["total_iter"]
+        self.use_tb_logger = opt["logger"]["use_tb_logger"]
         self.tb_logger = tb_logger
         self.wandb_logger = wandb_logger
-        
+
         self.start_time = time.time()
         self.logger = get_root_logger()
         # show_dir_name = f"resuts/{self.exp_name}/train"
         # os.makedirs(show_dir_name, exist_ok=True)
         # self.results_root = show_dir_name
-
-        
-        
 
     def reset_start_time(self):
         self.start_time = time.time()
@@ -112,99 +113,97 @@ class MessageLogger():
                 time (float): Iter time.
                 data_time (float): Data time for each iter.
         """
-        
-        # epoch, iter, learning rates
-        epoch = log_vars.pop('epoch')
-        current_iter = log_vars.pop('iter')
-        lrs = log_vars.pop('lrs')
 
-        message = (f'[{self.exp_name[:5]}..][epoch:{epoch:3d}, iter:{current_iter:8,d}, lr:(')
+        # epoch, iter, learning rates
+        epoch = log_vars.pop("epoch")
+        current_iter = log_vars.pop("iter")
+        lrs = log_vars.pop("lrs")
+
+        message = (
+            f"[{self.exp_name[:5]}..][epoch:{epoch:3d}, iter:{current_iter:8,d}, lr:("
+        )
         for v in lrs:
-            message += f'{v:.3e},'
-        message += ')] '
+            message += f"{v:.3e},"
+        message += ")] "
         if self.wandb_logger is not None:
-            self.wandb_logger.log({f'lrs':lrs[-1]}, current_iter)
-        
+            self.wandb_logger.log({"lrs": lrs[-1]}, current_iter)
+
         # time and estimated time
-        if 'time' in log_vars.keys():
-            iter_time = log_vars.pop('time')
-            data_time = log_vars.pop('data_time')
+        if "time" in log_vars.keys():
+            iter_time = log_vars.pop("time")
+            data_time = log_vars.pop("data_time")
 
             total_time = time.time() - self.start_time
             time_sec_avg = total_time / (current_iter - self.start_iter + 1)
             eta_sec = time_sec_avg * (self.max_iters - current_iter - 1)
             eta_str = str(datetime.timedelta(seconds=int(eta_sec)))
-            message += f'[eta: {eta_str}, '
-            message += f'time (data): {iter_time:.3f} ({data_time:.3f})] '
+            message += f"[eta: {eta_str}, "
+            message += f"time (data): {iter_time:.3f} ({data_time:.3f})] "
 
         # other items, especially losses
         for k, v in log_vars.items():
-            message += f'{k}: {v:.4e} '
+            message += f"{k}: {v:.4e} "
             # tensorboard logger
-            if self.use_tb_logger and 'debug' not in self.exp_name:
-                if k.startswith('l_'):
-                    self.tb_logger.add_scalar(f'losses/{k}', v, current_iter)
+            if self.use_tb_logger and "debug" not in self.exp_name:
+                if k.startswith("l_"):
+                    self.tb_logger.add_scalar(f"losses/{k}", v, current_iter)
                     if self.wandb_logger is not None:
-                        self.wandb_logger.log({f'losses/{k}':v}, current_iter)
+                        self.wandb_logger.log({f"losses/{k}": v}, current_iter)
                 else:
-                    
                     self.tb_logger.add_scalar(k, v, current_iter)
                     if self.wandb_logger is not None:
-                        self.wandb_logger.log({f'losses/{k}':v}, current_iter)
-
-            
+                        self.wandb_logger.log({f"losses/{k}": v}, current_iter)
 
         self.logger.info(message)
+
     @master_only
-    def log_image_video(self,seqs_log):
-        seqs = seqs_log['video']
-        
-        clip_name = seqs_log['clip_name']
-        iter = seqs_log['iter']
-        seqs = (seqs.numpy()*255.).round().astype(np.uint8)
-        
+    def log_image_video(self, seqs_log):
+        seqs = seqs_log["video"]
+
+        clip_name = seqs_log["clip_name"]
+        iter = seqs_log["iter"]
+        seqs = (seqs.numpy() * 255.0).round().astype(np.uint8)
 
         # if out_type == np.uint8:
-            # Unlike MATLAB, numpy.unit8() WILL NOT round by default.
-            # img_np = (img_np * 255.0).round()
+        # Unlike MATLAB, numpy.unit8() WILL NOT round by default.
+        # img_np = (img_np * 255.0).round()
         # img_np = img_np.astype(out_type)
 
-        video = wandb.Video(seqs,fps=2,format="mp4",caption=clip_name)
-        
-        self.wandb_logger.log({"video_{}".format(clip_name):video},step=iter)
+        video = wandb.Video(seqs, fps=2, format="mp4", caption=clip_name)
+
+        self.wandb_logger.log({f"video_{clip_name}": video}, step=iter)
+
     @master_only
-    def log_video_images(self,seqs_log):
+    def log_video_images(self, seqs_log):
         """
         seqs_log['video']: Tensor, t,c,h,w
         seqs_log['clip_name']: str
         seqs_log['iter']: int
         """
-        seqs = seqs_log['video']
-        
-        clip_name = seqs_log['clip_name']
-        iter = seqs_log['iter']
-        seqs = torchvision.utils.make_grid(seqs,4)
+        seqs = seqs_log["video"]
+
+        clip_name = seqs_log["clip_name"]
+        iter = seqs_log["iter"]
+        seqs = torchvision.utils.make_grid(seqs, 4)
         # seqs = (seqs.numpy()*255.).round().astype(np.uint8)
-        
 
         # if out_type == np.uint8:
-            # Unlike MATLAB, numpy.unit8() WILL NOT round by default.
-            # img_np = (img_np * 255.0).round()
+        # Unlike MATLAB, numpy.unit8() WILL NOT round by default.
+        # img_np = (img_np * 255.0).round()
         # img_np = img_np.astype(out_type)
 
         # video = wandb.Video(seqs,fps=2,format="mp4",caption=clip_name)
         # video = wandb.Image(seqs, caption=clip_name)
-        torchvision.utils.save_image(seqs,os.path.join(self.results_root,"video_{}_{}.png".format(clip_name,iter)))
+        torchvision.utils.save_image(
+            seqs, os.path.join(self.results_root, f"video_{clip_name}_{iter}.png")
+        )
         # self.wandb_logger.log({"video_{}".format(clip_name):video},step=iter)
-    
-    
-        
-
 
 
 @master_only
 def init_tb_logger(log_dir):
     from torch.utils.tensorboard import SummaryWriter
+
     tb_logger = SummaryWriter(log_dir=log_dir)
     return tb_logger
 
@@ -212,30 +211,36 @@ def init_tb_logger(log_dir):
 @master_only
 def init_wandb_logger(opt):
     """We now only use wandb to sync tensorboard log."""
-    
+
     logger = get_root_logger()
 
-    project = opt['logger']['wandb']['project']
-    resume_id = opt['logger']['wandb'].get('resume_id')
+    project = opt["logger"]["wandb"]["project"]
+    resume_id = opt["logger"]["wandb"].get("resume_id")
 
     if resume_id:
         wandb_id = resume_id
-        resume = 'allow'
-        logger.warning(f'Resume wandb logger with id={wandb_id}.')
+        resume = "allow"
+        logger.warning(f"Resume wandb logger with id={wandb_id}.")
     else:
         wandb_id = wandb.util.generate_id()
-        resume = 'never'
+        resume = "never"
 
     # runer = wandb.init(id=wandb_id, resume=resume, mode = "offline",name=opt['logger']['wandb']['wandb_name'],config=opt, project=project)
     if project is not None:
-        runer = wandb.init(id=wandb_id, resume=resume,name=opt['logger']['wandb']['wandb_name'],config=opt, project=project)
-        logger.info(f'Use wandb logger with id={wandb_id}; project={project}.')
+        runer = wandb.init(
+            id=wandb_id,
+            resume=resume,
+            name=opt["logger"]["wandb"]["wandb_name"],
+            config=opt,
+            project=project,
+        )
+        logger.info(f"Use wandb logger with id={wandb_id}; project={project}.")
     else:
         runer = None
     return runer
 
 
-def get_root_logger(logger_name='basicsr', log_level=logging.INFO, log_file=None):
+def get_root_logger(logger_name="basicsr", log_level=logging.INFO, log_file=None):
     """Get the root logger.
 
     The logger will be initialized if it has not been initialized. By default a
@@ -258,18 +263,18 @@ def get_root_logger(logger_name='basicsr', log_level=logging.INFO, log_file=None
     if logger_name in initialized_logger:
         return logger
 
-    format_str = '%(asctime)s %(levelname)s: %(message)s'
+    format_str = "%(asctime)s %(levelname)s: %(message)s"
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(logging.Formatter(format_str))
     logger.addHandler(stream_handler)
     logger.propagate = False
     rank, _ = get_dist_info()
     if rank != 0:
-        logger.setLevel('ERROR')
+        logger.setLevel("ERROR")
     elif log_file is not None:
         logger.setLevel(log_level)
         # add file handler
-        file_handler = logging.FileHandler(log_file, 'w')
+        file_handler = logging.FileHandler(log_file, "w")
         file_handler.setFormatter(logging.Formatter(format_str))
         file_handler.setLevel(log_level)
         logger.addHandler(file_handler)
@@ -286,6 +291,7 @@ def get_env_info():
     import torchvision
 
     from basicsr.version import __version__
+
     msg = r"""
                 ____                _       _____  ____
                / __ ) ____ _ _____ (_)_____/ ___/ / __ \
@@ -298,8 +304,10 @@ def get_env_info():
   / /_/ // /_/ // /_/ // /_/ /  / /___/ /_/ // /__ / /<    /_/
   \____/ \____/ \____/ \____/  /_____/\____/ \___//_/|_|  (_)
     """
-    msg += ('\nVersion Information: '
-            f'\n\tBasicSR: {__version__}'
-            f'\n\tPyTorch: {torch.__version__}'
-            f'\n\tTorchVision: {torchvision.__version__}')
+    msg += (
+        "\nVersion Information: "
+        f"\n\tBasicSR: {__version__}"
+        f"\n\tPyTorch: {torch.__version__}"
+        f"\n\tTorchVision: {torchvision.__version__}"
+    )
     return msg
